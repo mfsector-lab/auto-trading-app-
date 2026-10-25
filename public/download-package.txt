@@ -1,0 +1,16 @@
+TradeAutomate AI bundle
+=======================
+Type: app
+
+Included files:
+- index.html
+- manifest.webmanifest
+- icon.svg
+- TradeAutomate-EA.mq4
+- TradeAutomate-EA.mq5
+- README.txt
+
+How to use:
+1. Open the site in a browser.
+2. Install it as a PWA from the browser's install prompt.
+3. Use the provided EA file in MT4 or MT5.

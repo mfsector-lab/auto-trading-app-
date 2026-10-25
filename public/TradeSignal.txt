@@ -1,0 +1,1 @@
+{"mode":"scalp","action":"BUY","account_mode":"LIVE","bot_enabled":true,"symbol":"XAUUSD","lot":0.02,"tp_pips":10,"sl_pips":7,"max_spread":50,"magic":54321,"comment":"TradeAutomate_File","trade_count":3,"timestamp":"2026-07-20T11:30:00Z"}

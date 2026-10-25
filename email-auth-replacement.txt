@@ -1,0 +1,504 @@
+'use client';
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
+import Nav from '@/components/Nav';
+import {
+  Copy,
+  Check,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Zap,
+  Link2,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Activity,
+} from 'lucide-react';
+
+const BASE = [
+  { symbol: 'EURUSD', name: 'Euro / US Dollar', price: 1.08542, dec: 5 },
+  { symbol: 'GBPUSD', name: 'British Pound / USD', price: 1.27341, dec: 5 },
+  { symbol: 'USDJPY', name: 'US Dollar / Yen', price: 149.832, dec: 3 },
+  { symbol: 'XAUUSD', name: 'Gold / US Dollar', price: 2318.45, dec: 2 },
+  { symbol: 'BTCUSD', name: 'Bitcoin / USD', price: 67420.0, dec: 1 },
+  { symbol: 'USDCAD', name: 'US Dollar / CAD', price: 1.36412, dec: 5 },
+  { symbol: 'AUDUSD', name: 'Aussie / US Dollar', price: 0.65234, dec: 5 },
+  { symbol: 'US500', name: 'S&P 500 Index', price: 5210.3, dec: 2 },
+  { symbol: 'NAS100', name: 'NASDAQ 100', price: 18320.5, dec: 1 },
+  { symbol: 'USOIL', name: 'Crude Oil (WTI)', price: 78.32, dec: 2 },
+];
+
+type Signal = 'BUY' | 'SELL' | 'HOLD';
+type Trend = 'UP' | 'DOWN' | 'FLAT';
+interface Market {
+  symbol: string;
+  name: string;
+  price: number;
+  dec: number;
+  change: number;
+  signal: Signal;
+  trend: Trend;
+  strength: number;
+  spread: number;
+}
+
+function SigBadge({ s }: { s: Signal }) {
+  const cls =
+    s === 'BUY'
+      ? 'bg-green-100 text-green-700 border-green-200'
+      : s === 'SELL'
+        ? 'bg-red-100 text-red-700 border-red-200'
+        : 'bg-gray-100 text-gray-500 border-gray-200';
+  return (
+    <span className={`border text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{s}</span>
+  );
+}
+function TrendIco({ t }: { t: Trend }) {
+  if (t === 'UP') return <TrendingUp size={13} className="text-green-500" />;
+  if (t === 'DOWN') return <TrendingDown size={13} className="text-red-500" />;
+  return <Minus size={13} className="text-gray-400" />;
+}
+function Bars({ n }: { n: number }) {
+  return (
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className={`w-1.5 h-3 rounded-sm ${i <= n ? 'bg-blue-500' : 'bg-gray-100'}`} />
+      ))}
+    </div>
+  );
+}
+
+const SCALP_SYMBOLS = BASE.map((m) => m.symbol);
+const DEF_SCALP = {
+  symbol: 'EURUSD',
+  mode: 'BUY',
+  lot: '0.01',
+  tp: '10',
+  sl: '7',
+  spread: '2',
+  magic: '54321',
+};
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
+
+export default function App() {
+  const [tab, setTab] = useState<'markets' | 'scalping' | 'connect'>('markets');
+  const [mkt, setMkt] = useState<Market[]>([]);
+  const [spin, setSpin] = useState(false);
+  const [copied, setCopied] = useState('');
+  const [eaOpen, setEaOpen] = useState(false);
+  const [origin, setOrigin] = useState('https://your-app.com');
+  const [scalp, setScalp] = useState(DEF_SCALP);
+  const [log, setLog] = useState<string[]>([]);
+  const [canInstall, setCanInstall] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logCount = useRef(0);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+      const savedUser = window.localStorage.getItem('tradeautomate-current-user');
+      if (savedUser) {
+        setCurrentUser(savedUser);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      const promptEvent = event as BeforeInstallPromptEvent;
+      promptEvent.preventDefault();
+      setInstallPrompt(promptEvent);
+      setCanInstall(true);
+    };
+
+    const onAppInstalled = () => {
+      setCanInstall(false);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
+    const gen = (): Market[] => {
+      const sigs: Signal[] = ['BUY', 'SELL', 'HOLD'];
+      return BASE.map((m) => {
+        const r = Math.random;
+        const chg = +(r() * 2.4 - 1.2).toFixed(2);
+        return {
+          ...m,
+          price: +(m.price * (1 + (r() * 0.002 - 0.001))).toFixed(m.dec),
+          change: chg,
+          signal: sigs[Math.floor(r() * 3)],
+          trend: chg > 0.2 ? 'UP' : chg < -0.2 ? 'DOWN' : ('FLAT' as Trend),
+          strength: Math.floor(r() * 5) + 1,
+          spread: +(r() * 1.8 + 0.3).toFixed(1),
+        };
+      });
+    };
+    setMkt(gen());
+    timer.current = setInterval(() => setMkt(gen()), 5000);
+    return () => {
+      if (timer.current) clearInterval(timer.current);
+    };
+  }, []);
+
+  const refresh = useCallback(() => {
+    setSpin(true);
+    const sigs: Signal[] = ['BUY', 'SELL', 'HOLD'];
+    const fresh: Market[] = BASE.map((m) => {
+      const r = Math.random;
+      const chg = +(r() * 2.4 - 1.2).toFixed(2);
+      return {
+        ...m,
+        price: +(m.price * (1 + (r() * 0.002 - 0.001))).toFixed(m.dec),
+        change: chg,
+        signal: sigs[Math.floor(r() * 3)],
+        trend: chg > 0.2 ? 'UP' : chg < -0.2 ? 'DOWN' : ('FLAT' as Trend),
+        strength: Math.floor(r() * 5) + 1,
+        spread: +(r() * 1.8 + 0.3).toFixed(1),
+      };
+    });
+    setMkt(fresh);
+    setTimeout(() => setSpin(false), 500);
+  }, []);
+
+  const copy = useCallback((text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(''), 2000);
+  }, []);
+
+  const scalpJSON = JSON.stringify(
+    {
+      mode: 'scalp',
+      action: scalp.mode,
+      symbol: scalp.symbol,
+      lot: parseFloat(scalp.lot),
+      tp_pips: parseInt(scalp.tp),
+      sl_pips: parseInt(scalp.sl),
+      max_spread: parseFloat(scalp.spread),
+      magic: parseInt(scalp.magic),
+      comment: 'TradeAutomate_Scalp',
+    },
+    null,
+    2
+  );
+
+  const sendScalp = () => {
+    logCount.current += 1;
+    const n = logCount.current;
+    setLog((p) =>
+      [
+        `[#${n}] ${scalp.mode} ${scalp.symbol} lot=${scalp.lot} TP=${scalp.tp}p SL=${scalp.sl}p spread≤${scalp.spread}`,
+        ...p,
+      ].slice(0, 20)
+    );
+  };
+
+  const installApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setCanInstall(false);
+    setInstallPrompt(null);
+  };
+
+  const handleAuth = useCallback(
+    (event?: { preventDefault?: () => void }) => {
+      event?.preventDefault?.();
+      if (typeof window === 'undefined') return;
+
+      const email = authEmail.trim();
+      const password = authPassword.trim();
+
+      if (!email || !password) {
+        setAccountMessage('Please enter both an email and password.');
+        return;
+      }
+
+      const storedUsers = JSON.parse(window.localStorage.getItem('tradeautomate-users') ?? '[]') as Array<{ email: string; password: string }>;
+
+      if (authMode === 'signup') {
+        const exists = storedUsers.some((entry) => entry.email.toLowerCase() === email.toLowerCase());
+        if (exists) {
+          setAccountMessage('That email is already taken. Please try another one.');
+          return;
+        }
+
+        storedUsers.push({ email, password });
+        window.localStorage.setItem('tradeautomate-users', JSON.stringify(storedUsers));
+      } else {
+        const validUser = storedUsers.find(
+          (entry) => entry.email.toLowerCase() === email.toLowerCase() && entry.password === password
+        );
+
+        if (!validUser) {
+          setAccountMessage('No account matches that email and password. Create one first.');
+          return;
+        }
+      }
+
+      window.localStorage.setItem('tradeautomate-current-user', email);
+      setCurrentUser(email);
+      setAuthEmail('');
+      setAuthPassword('');
+      setAccountMessage(authMode === 'signup' ? `Welcome, ${email}!` : `Welcome back, ${email}.`);
+    },
+    [authMode, authPassword, authEmail]
+  );
+
+  const logout = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('tradeautomate-current-user');
+    }
+    setCurrentUser(null);
+    setAccountMessage('You have been signed out.');
+  }, []);
+
+  const ea = `/+------------------------------------------------------------------+\n//|  TradeAutomate AI — Expert Advisor v1.0                         |\n//|  Handles: Signal Mode + Scalping Mode                           |\n/+------------------------------------------------------------------+\n#property strict\n#property version   "1.00";`;
+
+  const TABS = [
+    { id: 'markets' as const, label: 'Markets & Signals' },
+    { id: 'scalping' as const, label: 'Scalping' },
+    { id: 'connect' as const, label: 'MT4 Connect' },
+  ];
+
+  const buys = mkt.filter((m) => m.signal === 'BUY').length;
+  const sells = mkt.filter((m) => m.signal === 'SELL').length;
+  const holds = mkt.filter((m) => m.signal === 'HOLD').length;
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Nav />
+        <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-10">
+          <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-blue-600">Private access</p>
+            <h1 className="mt-2 text-2xl font-bold text-gray-900">Create an account to view the dashboard</h1>
+            <p className="mt-3 text-sm text-gray-600">
+              Only registered users can see signals, scalp controls, and MT4 setup details.
+            </p>
+            <form
+              onSubmit={(event) => handleAuth(event)}
+              className="mt-6 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]"
+            >
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="Email"
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none"
+              />
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="Password"
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleAuth()}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+              >
+                {authMode === 'login' ? 'Log in' : 'Create account'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode((mode) => (mode === 'login' ? 'signup' : 'login'))}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                {authMode === 'login' ? 'Create account' : 'Back to login'}
+              </button>
+            </form>
+            {accountMessage ? <p className="mt-3 text-sm text-blue-600">{accountMessage}</p> : null}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Nav />
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+        <div className="bg-blue-600 rounded-2xl p-5 text-white mb-5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Activity size={13} className="text-blue-200" />
+                <span className="text-blue-200 text-[10px] font-semibold uppercase tracking-widest">
+                  Live Trading Bot
+                </span>
+              </div>
+              <h1 className="text-xl font-bold">TradeAutomate AI</h1>
+              <p className="text-blue-100 text-xs mt-1">
+                Real-time signals · AI verification · MT4 bridge
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                ['BUY', buys, 'bg-green-500'],
+                ['SELL', sells, 'bg-red-400'],
+                ['HOLD', holds, 'bg-white/20'],
+              ].map(([l, n, c]) => (
+                <div
+                  key={String(l)}
+                  className={`${String(c)} rounded-xl px-3 py-2 text-center min-w-[52px]`}
+                >
+                  <p className="text-sm font-bold text-white">{String(n)}</p>
+                  <p className="text-[10px] text-white/80">{String(l)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {canInstall && (
+              <button
+                onClick={installApp}
+                className="rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
+              >
+                Install on PC or phone
+              </button>
+            )}
+            <a
+              href="/api/download-package?type=full"
+              className="rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
+            >
+              Download full app package
+            </a>
+            <a
+              href="/api/download-package?type=website"
+              className="rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
+            >
+              Download website package
+            </a>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/20 bg-white/10 p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-100">Signed in</p>
+                <p className="text-sm font-semibold text-white">{currentUser}</p>
+              </div>
+              <button
+                onClick={logout}
+                className="rounded-lg border border-white/20 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15"
+              >
+                Log out
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-blue-100">
+              Install this site on your phone or PC to use it like an app, or download the full package below.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-5">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${tab === t.id ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'markets' && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-gray-500">{mkt.length} instruments · refreshes every 5s</p>
+              <button
+                onClick={refresh}
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800"
+              >
+                <RefreshCw size={12} className={spin ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {mkt.map((m) => (
+                <div key={m.symbol} className="bg-white rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-gray-900">{m.symbol}</p>
+                        <SigBadge s={m.signal} />
+                      </div>
+                      <p className="text-[10px] text-gray-400">{m.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gray-900">{m.price.toLocaleString()}</p>
+                      <p
+                        className={`text-[10px] font-semibold ${m.change >= 0 ? 'text-green-600' : 'text-red-500'}`}
+                      >
+                        {m.change >= 0 ? '+' : ''}
+                        {m.change}%
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <TrendIco t={m.trend} />
+                        <span className="text-[10px] text-gray-500">{m.trend}</span>
+                      </div>
+                      <Bars n={m.strength} />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400">Spread {m.spread}</span>
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === 'scalping' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <p className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Zap size={15} className="text-blue-600" />
+                Scalp Config
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest block mb-1">
+                    Symbol
+                  </label>
+                  <select
+                    value={scalp.symbol}
+                    onChange={(e) => setScalp((p) => ({ ...p, symbol: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-gray-50 focus:outline-none focus:border-blue-400"
+                  >
+                    {SCALP_SYMBOLS.map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+(Truncated)

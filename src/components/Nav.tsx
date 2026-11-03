@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Download, Menu, X } from 'lucide-react';
+import OAuthCatcher from '@/components/deriv/OAuthCatcher';
 
 const links = [
   { href: '/', label: 'Dashboard' },
@@ -25,6 +26,8 @@ export default function Nav() {
   }, []);
 
   return (
+    <>
+    <OAuthCatcher />
     <header className="sticky top-0 z-40 border-b border-violet-500/20 bg-slate-950/85 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-3">
@@ -84,5 +87,6 @@ export default function Nav() {
         </div>
       )}
     </header>
+    </>
   );
 }

@@ -8,6 +8,7 @@ const links = [
   { href: '/', label: 'Dashboard' },
   { href: '/bridge', label: 'MT4/MT5 Bridge' },
   { href: '/deriv', label: 'Deriv Digits' },
+  { href: '/bots', label: 'AI Bots' },
   { href: '/sygnal', label: 'Sygnal' },
   { href: '/art', label: 'Art Platform' },
   { href: '/download', label: 'Download' },

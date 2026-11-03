@@ -11,6 +11,9 @@ export class DerivSocket {
   private reqId = 1;
   private pending = new Map<number, Handler>();
   private tickHandlers = new Map<string, Set<Handler>>();
+  private balanceHandlers = new Set<Handler>();
+  private contractHandlers = new Map<string, Set<Handler>>();
+  private balanceReqHandlers = new Set<Handler>();
   private openHandlers = new Set<Handler>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private backoffMs = 1000;
@@ -49,6 +52,17 @@ export class DerivSocket {
       if (sub && echo) {
         const handlers = this.tickHandlers.get(echo);
         handlers?.forEach((h) => h(msg));
+        return;
+      }
+      if (sub && (msg.balance as unknown)) {
+        this.balanceHandlers.forEach((h) => h(msg.balance as Record<string, unknown>));
+        return;
+      }
+      if (msg.proposal_open_contract) {
+        const poc = msg.proposal_open_contract as Record<string, unknown>;
+        const cid = String(poc.contract_id ?? '');
+        this.contractHandlers.get(cid)?.forEach((h) => h(poc));
+        return;
       }
     };
     this.ws.onclose = () => {
@@ -65,6 +79,32 @@ export class DerivSocket {
     if (this.closedByUser) return;
     setTimeout(() => this.connect(onOpen, onClose), this.backoffMs);
     this.backoffMs = Math.min(this.backoffMs * 2, 30000);
+  }
+
+  onBalance(h: Handler): void {
+    this.balanceHandlers.add(h);
+  }
+
+  onContract(contractId: string, h: Handler): void {
+    if (!this.contractHandlers.has(contractId)) this.contractHandlers.set(contractId, new Set());
+    this.contractHandlers.get(contractId)!.add(h);
+  }
+
+  offContract(contractId: string, h: Handler): void {
+    this.contractHandlers.get(contractId)?.delete(h);
+  }
+
+  async subscribeBalance(): Promise<Record<string, unknown>> {
+    const res = await this.send({ balance: 1, subscribe: 1 });
+    return (res.balance as Record<string, unknown>) ?? {};
+  }
+
+  async proposal(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.send({ proposal: 1, ...params });
+  }
+
+  async buy(proposalId: string, maxPrice: number): Promise<Record<string, unknown>> {
+    return this.send({ buy: proposalId, price: maxPrice });
   }
 
   private startPing(): void {

@@ -66,3 +66,8 @@ export function consumeOAuthParamsIfPresent(): DerivAccount[] {
   }
   return accounts;
 }
+
+/** Deriv demo accounts are virtual: loginid starts with 'VR'. Real accounts do not. */
+export function isDemoAccount(a: DerivAccount): boolean {
+  return a.loginid.toUpperCase().startsWith('VR');
+}

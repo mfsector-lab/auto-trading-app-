@@ -6,6 +6,7 @@ import {
   clearSessions,
   consumeOAuthParamsIfPresent,
   loadSessions,
+  saveSessions,
   type DerivAccount,
 } from '@/lib/deriv/session';
 import { DerivSocket } from '@/lib/deriv/ws';
@@ -20,6 +21,10 @@ export default function DerivConnect() {
   const [tickCount, setTickCount] = useState(0);
   const [appId, setAppId] = useState('1089');
   const [appIdInput, setAppIdInput] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenMsg, setTokenMsg] = useState('');
+  const [tokenBusy, setTokenBusy] = useState(false);
+  const [balance, setBalance] = useState<{ v: number; c: string } | null>(null);
   const socketRef = useRef<DerivSocket | null>(null);
 
   useEffect(() => {
@@ -41,6 +46,52 @@ export default function DerivConnect() {
     setAppId(getDerivAppId());
     setAppIdInput('');
   }, [appIdInput]);
+
+  /** Direct API-token login: authorize on the spot, store as a normal session. */
+  const loginWithToken = useCallback(async () => {
+    const token = tokenInput.trim();
+    if (!token) return;
+    setTokenBusy(true);
+    setTokenMsg('Authorizing with Deriv…');
+    try {
+      const sock = new DerivSocket();
+      sock.connect(async () => {
+        try {
+          const res = await sock.authorize(token);
+          const a = res.authorize as Record<string, unknown>;
+          const account: DerivAccount = {
+            index: 1,
+            loginid: String(a.loginid ?? ''),
+            token,
+            currency: String(a.currency ?? 'USD'),
+          };
+          saveSessions([account]);
+          setAccounts(loadSessions());
+          setActive(account);
+          setTokenInput('');
+          setTokenMsg(`Signed in as ${account.loginid} (${String(a.is_virtual) === '1' ? 'DEMO' : 'REAL'}) — live balance active below.`);
+          // keep this socket as the live one
+          socketRef.current?.close();
+          socketRef.current = sock;
+          setWsState('authorized');
+          await sock.subscribeBalance();
+          sock.onBalance((b) => setBalance({ v: Number(b.balance ?? 0), c: String(b.currency ?? account.currency) }));
+          await sock.subscribeTicks('R_10', (msg) => {
+            const t = msg.tick as Record<string, unknown> | undefined;
+            if (t) { setLastTick(String(t.quote ?? '')); setTickCount((x) => x + 1); }
+          });
+        } catch (e) {
+          sock.close();
+          setTokenMsg(`Deriv rejected the token: ${e instanceof Error ? e.message : 'unknown error'}`);
+        } finally {
+          setTokenBusy(false);
+        }
+      });
+    } catch {
+      setTokenMsg('Could not reach Deriv.');
+      setTokenBusy(false);
+    }
+  }, [tokenInput]);
 
   const initSocket = useCallback(async (account: DerivAccount) => {
     setWsState('connecting');
@@ -159,7 +210,35 @@ export default function DerivConnect() {
           <p className="text-slate-500">Ticks received</p>
           <p className="font-semibold text-slate-200">{tickCount}</p>
         </div>
+        <div className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5">
+          <p className="text-slate-500">Balance</p>
+          <p className={`font-semibold ${balance && balance.v >= 0 ? 'text-emerald-300' : 'text-slate-200'}`}>
+            {balance ? `${balance.v.toFixed(2)} ${balance.c}` : '—'}
+          </p>
+        </div>
       </div>
+
+      <details className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px]">
+        <summary className="cursor-pointer font-semibold text-slate-300">Advanced: sign in with an API token (no OAuth)</summary>
+        <p className="mt-2 text-slate-400">
+          Create a token at app.deriv.com → Settings → API token (scopes: read, trade). Paste it here
+          to log in instantly — this bypasses OAuth and works with your real balance right now.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <input
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value.trim())}
+            placeholder="Paste Deriv API token"
+            className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 placeholder:text-slate-500"
+            type="password"
+          />
+          <button onClick={() => void loginWithToken()} disabled={tokenBusy || !tokenInput}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-500 disabled:opacity-40">
+            {tokenBusy ? 'Checking…' : 'Sign in'}
+          </button>
+        </div>
+        {tokenMsg && <p className={`mt-1 ${tokenMsg.startsWith('Signed in') ? 'text-emerald-300' : 'text-rose-300'}`}>{tokenMsg}</p>}
+      </details>
 
       {isTestAppId(appId) && (
         <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-[11px] text-amber-100">

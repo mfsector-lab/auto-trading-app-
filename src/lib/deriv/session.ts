@@ -21,12 +21,10 @@ export function parseAccountsFromParams(search: string): DerivAccount[] {
     const loginid = params.get(`acct${i}`);
     const token = params.get(`token${i}`);
     if (!loginid || !token) break;
-    accounts.push({
-      index: i,
-      loginid,
-      token,
-      currency: params.get(`currency${i}`) ?? 'USD',
-    });
+    // Deriv legacy OAuth sends cur1/cur2... (docs), some flows use currency1 — accept both.
+    const currency =
+      params.get(`cur${i}`) ?? params.get(`currency${i}`) ?? 'USD';
+    accounts.push({ index: i, loginid, token, currency });
   }
   return accounts;
 }

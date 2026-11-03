@@ -152,3 +152,50 @@ export class DerivSocket {
     this.ws = null;
   }
 }
+
+export interface EndpointTestResult {
+  url: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  closeCode?: number;
+}
+
+/** Try one Deriv WS endpoint: open, ping, wait for pong. Reports precise failure detail. */
+export function testEndpoint(label: string, url: string, timeoutMs = 8000): Promise<EndpointTestResult> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      resolve({ url, label, ok: false, detail: 'constructor threw: ' + String(e) });
+      return;
+    }
+    const finish = (r: Omit<EndpointTestResult, 'url' | 'label'>) => {
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ url, label, ...r });
+    };
+    const t = setTimeout(() => finish({ ok: false, detail: 'no response — packets silently dropped (firewall/VPN/ISP block)' }), timeoutMs);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ ping: 1, req_id: 99 }));
+      // wait for pong via onmessage below
+    };
+    ws.onmessage = (evt) => {
+      try {
+        const m = JSON.parse(String(evt.data));
+        if (m.ping === 'pong' || m.msg_type === 'ping' || m.echo_req?.ping !== undefined) {
+          clearTimeout(t);
+          finish({ ok: true, detail: 'connected — Deriv reachable' });
+        }
+      } catch { /* ignore */ }
+    };
+    ws.onclose = (evt) => {
+      clearTimeout(t);
+      finish({ ok: false, detail: `closed during handshake`, closeCode: evt.code });
+    };
+    ws.onerror = () => {
+      clearTimeout(t);
+      finish({ ok: false, detail: 'handshake failed (blocked by network, VPN, or security software)' });
+    };
+  });
+}

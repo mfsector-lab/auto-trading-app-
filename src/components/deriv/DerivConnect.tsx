@@ -9,7 +9,8 @@ import {
   saveSessions,
   type DerivAccount,
 } from '@/lib/deriv/session';
-import { DerivSocket } from '@/lib/deriv/ws';
+import { DerivSocket, testEndpoint, type EndpointTestResult } from '@/lib/deriv/ws';
+import { derivWsUrl } from '@/lib/deriv/config';
 
 type WsState = 'idle' | 'connecting' | 'open' | 'authorized' | 'error';
 
@@ -22,6 +23,8 @@ export default function DerivConnect() {
   const [tokenInput, setTokenInput] = useState('');
   const [tokenMsg, setTokenMsg] = useState('');
   const [tokenBusy, setTokenBusy] = useState(false);
+  const [tests, setTests] = useState<EndpointTestResult[] | null>(null);
+  const [testing, setTesting] = useState(false);
   const [balance, setBalance] = useState<{ v: number; c: string } | null>(null);
   const socketRef = useRef<DerivSocket | null>(null);
 
@@ -210,6 +213,52 @@ export default function DerivConnect() {
           <p className={`mt-1 text-[11px] ${tokenMsg.startsWith('Signed in') ? 'text-emerald-300' : 'text-rose-300'}`}>
             {tokenMsg}
           </p>
+        )}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px]">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold text-slate-300">Connection test — finds out if your network can reach Deriv</p>
+          <button
+            onClick={async () => {
+              setTesting(true);
+              setTests(null);
+              const candidates: Array<[string, string]> = [
+                ['Deriv primary (derivws)', 'wss://ws.derivws.com/websockets/v3?app_id=1089'],
+                ['Deriv legacy (binaryws)', 'wss://ws.binaryws.com/websockets/v3?app_id=1089'],
+                ['Current app endpoint', derivWsUrl()],
+              ];
+              const results: EndpointTestResult[] = [];
+              for (const [label, url] of candidates) {
+                results.push(await testEndpoint(label, url));
+                setTests([...results]);
+              }
+              setTesting(false);
+            }}
+            disabled={testing}
+            className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white hover:bg-slate-600 disabled:opacity-40"
+          >
+            {testing ? 'Testing…' : 'Run connection test'}
+          </button>
+        </div>
+        {tests && (
+          <div className="mt-2 space-y-1">
+            {tests.map((t) => (
+              <div key={t.url} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5">
+                <span className="text-slate-300">{t.label}</span>
+                <span className={t.ok ? 'text-emerald-300' : 'text-rose-300'}>
+                  {t.ok ? '✓ reachable' : `✗ ${t.detail}${t.closeCode ? ` (code ${t.closeCode})` : ''}`}
+                </span>
+              </div>
+            ))}
+            {tests.every((t) => !t.ok) && !testing && (
+              <p className="mt-1 rounded-lg border border-amber-400/40 bg-amber-500/10 px-2 py-1.5 text-amber-200">
+                All endpoints blocked from this network. Fix: turn off VPN/adblocker/antivirus firewall for this site,
+                or open the site from a different network (phone hotspot works). The token login will work the moment
+                one of these endpoints turns green.
+              </p>
+            )}
+          </div>
         )}
       </div>
 

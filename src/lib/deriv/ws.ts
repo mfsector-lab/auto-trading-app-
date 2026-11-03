@@ -20,11 +20,12 @@ export class DerivSocket {
   public closedByUser = false;
   public authorized = false;
 
-  connect(onOpen?: Handler, onClose?: Handler): void {
+  connect(onOpen?: Handler, onClose?: Handler, onError?: Handler): void {
     this.closedByUser = false;
     try {
       this.ws = new WebSocket(derivWsUrl());
-    } catch {
+    } catch (e) {
+      onError?.({ message: String(e) });
       this.scheduleReconnect(onOpen, onClose);
       return;
     }
@@ -71,7 +72,7 @@ export class DerivSocket {
       if (!this.closedByUser) this.scheduleReconnect(onOpen, onClose);
     };
     this.ws.onerror = () => {
-      /* onclose follows */
+      onError?.({ message: 'websocket handshake failed (blocked or offline)' });
     };
   }
 

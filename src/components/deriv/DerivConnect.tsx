@@ -40,11 +40,22 @@ export default function DerivConnect() {
     if (!token) return;
     setTokenBusy(true);
     setTokenMsg('Authorizing with Deriv…');
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        setTokenBusy(false);
+        setTokenMsg('No response from Deriv after 15s. The WebSocket is blocked — disable VPN/adblocker, try another network, or your token type may need the new API flow (tell me the exact message).');
+      }
+    }, 15000);
     try {
       const sock = new DerivSocket();
       sock.connect(async () => {
+        if (settled) return;
         try {
           const res = await sock.authorize(token);
+          settled = true;
+          clearTimeout(timeout);
           const a = res.authorize as Record<string, unknown>;
           const account: DerivAccount = {
             index: 1,
@@ -67,13 +78,23 @@ export default function DerivConnect() {
             if (t) { setLastTick(String(t.quote ?? '')); setTickCount((x) => x + 1); }
           });
         } catch (e) {
+          settled = true;
+          clearTimeout(timeout);
           sock.close();
           setTokenMsg(`Deriv rejected the token: ${e instanceof Error ? e.message : 'unknown error'}`);
         } finally {
           setTokenBusy(false);
         }
+      },
+      () => {
+        if (!settled) setTokenMsg('Connection closed by Deriv — retrying automatically…');
+      },
+      (err) => {
+        if (!settled) setTokenMsg(`Connection error: ${err.message ?? 'unknown'}`);
       });
     } catch {
+      settled = true;
+      clearTimeout(timeout);
       setTokenMsg('Could not reach Deriv.');
       setTokenBusy(false);
     }

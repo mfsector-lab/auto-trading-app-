@@ -4,3 +4,5 @@ node_modules/
 *.ex5
 .env
 .env.local
+.vercel
+.env*

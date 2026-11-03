@@ -80,6 +80,34 @@ type OpenTradeStatus = {
   take_profit: number;
 };
 
+export type TradeResult = {
+  action: 'BUY' | 'SELL';
+  symbol: string;
+  ticket: number;
+  lot: number;
+  open_price: number;
+  close_price: number;
+  profit: number;
+  pips: number;
+  outcome: 'WIN' | 'LOSS';
+  duration_seconds: number;
+  ea_version: string;
+  timestamp: string;
+};
+
+export type AiLearningStats = {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalPnl: number;
+  avgPips: number;
+  bestSymbol: string;
+  worstSymbol: string;
+  symbolStats: Record<string, { trades: number; wins: number; totalPnl: number; avgPips: number }>;
+  recentResults: TradeResult[];
+};
+
 type ClientSignalState = {
   lastSignalByMode: Map<string, SignalPayload>;
   lastGlobalSignal: SignalPayload | null;
@@ -87,6 +115,8 @@ type ClientSignalState = {
   lastExecutionStatus: ExecutionStatus | null;
   lastRejectionStatus: RejectionStatus | null;
   lastOpenTradesStatus: OpenTradeStatus[];
+  tradeResults: TradeResult[];
+  aiStats: AiLearningStats;
 };
 
 const signalState = new Map<string, ClientSignalState>();
@@ -101,9 +131,72 @@ function getClientSignalState(clientId: string): ClientSignalState {
     lastExecutionStatus: null,
     lastRejectionStatus: null,
     lastOpenTradesStatus: [],
+    tradeResults: [],
+    aiStats: {
+      totalTrades: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      totalPnl: 0,
+      avgPips: 0,
+      bestSymbol: 'N/A',
+      worstSymbol: 'N/A',
+      symbolStats: {},
+      recentResults: [],
+    },
   };
   signalState.set(clientId, state);
   return state;
+}
+
+function updateAiStats(state: ClientSignalState): void {
+  const results = state.tradeResults;
+  if (results.length === 0) return;
+  const wins = results.filter((r) => r.outcome === 'WIN').length;
+  const losses = results.filter((r) => r.outcome === 'LOSS').length;
+  const totalPnl = +results.reduce((s, r) => s + r.profit, 0).toFixed(2);
+  const avgPips = +(results.reduce((s, r) => s + r.pips, 0) / results.length).toFixed(1);
+
+  const symbolMap: AiLearningStats['symbolStats'] = {};
+  for (const r of results) {
+    if (!symbolMap[r.symbol]) {
+      symbolMap[r.symbol] = { trades: 0, wins: 0, totalPnl: 0, avgPips: 0 };
+    }
+    const s = symbolMap[r.symbol];
+    s.trades++;
+    if (r.outcome === 'WIN') s.wins++;
+    s.totalPnl = +(s.totalPnl + r.profit).toFixed(2);
+    s.avgPips = +((s.avgPips * (s.trades - 1) + r.pips) / s.trades).toFixed(1);
+  }
+
+  let bestSymbol = 'N/A';
+  let worstSymbol = 'N/A';
+  let bestPnl = -Infinity;
+  let worstPnl = Infinity;
+
+  for (const [sym, data] of Object.entries(symbolMap)) {
+    if (data.totalPnl > bestPnl) {
+      bestPnl = data.totalPnl;
+      bestSymbol = sym;
+    }
+    if (data.totalPnl < worstPnl) {
+      worstPnl = data.totalPnl;
+      worstSymbol = sym;
+    }
+  }
+
+  state.aiStats = {
+    totalTrades: results.length,
+    wins,
+    losses,
+    winRate: +(results.length > 0 ? (wins / results.length) * 100 : 0).toFixed(1),
+    totalPnl,
+    avgPips,
+    bestSymbol,
+    worstSymbol,
+    symbolStats: symbolMap,
+    recentResults: results.slice(-30),
+  };
 }
 
 function normalizeAction(value: unknown): SignalAction {
@@ -191,7 +284,7 @@ function getRateLimitKey(request: NextRequest, ip: string, eventType?: string): 
 }
 
 function getRateLimitMax(request: NextRequest, eventType?: string): number {
-  if (eventType === 'heartbeat' || eventType === 'open_trades' || eventType === 'execution' || eventType === 'rejection') {
+  if (eventType === 'heartbeat' || eventType === 'open_trades' || eventType === 'execution' || eventType === 'rejection' || eventType === 'trade_result') {
     return RATE_LIMIT_MAX_TELEMETRY;
   }
   const { searchParams } = new URL(request.url);
@@ -200,8 +293,6 @@ function getRateLimitMax(request: NextRequest, eventType?: string): number {
 }
 
 function validateSecurity(request: NextRequest, eventType?: string): NextResponse | null {
-  // EA telemetry POSTs (heartbeat, open_trades, execution, rejection, commands) must never
-  // be rate-limited or blocked — the dashboard depends on these arriving continuously.
   if (request.method === 'POST') {
     return null;
   }
@@ -212,7 +303,8 @@ function validateSecurity(request: NextRequest, eventType?: string): NextRespons
   const isTelemetryEvent = eventType === 'heartbeat'
     || eventType === 'open_trades'
     || eventType === 'execution'
-    || eventType === 'rejection';
+    || eventType === 'rejection'
+    || eventType === 'trade_result';
 
   if (isRateLimited(limitKey, limitMax)) {
     return NextResponse.json({ ok: false, error: 'Rate limit exceeded.' }, { status: 429, headers: { 'Retry-After': '5' } });
@@ -283,6 +375,7 @@ export async function GET(request: NextRequest) {
         rejection: state.lastRejectionStatus,
         open_trades: state.lastOpenTradesStatus,
         queued_signal: state.lastGlobalSignal,
+        ai_stats: state.aiStats,
       },
       {
         status: 200,
@@ -290,6 +383,14 @@ export async function GET(request: NextRequest) {
           'Cache-Control': 'no-store',
         },
       }
+    );
+  }
+
+  const stats = searchParams.get('stats');
+  if (stats === '1' || stats === 'true') {
+    return NextResponse.json(
+      { ok: true, client_id: clientId, ai_stats: state.aiStats },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 
@@ -389,6 +490,33 @@ export async function POST(request: NextRequest) {
     };
     state.lastRejectionStatus = rejection;
     return NextResponse.json({ ok: true, client_id: clientId, rejection, timestamp: rejection.timestamp }, { status: 200 });
+  }
+
+  if (eventType === 'trade_result') {
+    const profit = toNumber((body as Record<string, unknown>).profit, 0);
+    const result: TradeResult = {
+      action: normalizeAction((body as Record<string, unknown>).action) === 'BUY' ? 'BUY' : 'SELL',
+      symbol: String((body as Record<string, unknown>).symbol ?? '').toUpperCase(),
+      ticket: Math.trunc(toNumber((body as Record<string, unknown>).ticket, 0)),
+      lot: toNumber((body as Record<string, unknown>).lot, 0),
+      open_price: toNumber((body as Record<string, unknown>).open_price, 0),
+      close_price: toNumber((body as Record<string, unknown>).close_price, 0),
+      profit,
+      pips: Math.trunc(toNumber((body as Record<string, unknown>).pips, 0)),
+      outcome: profit >= 0 ? 'WIN' : 'LOSS',
+      duration_seconds: Math.trunc(toNumber((body as Record<string, unknown>).duration_seconds, 0)),
+      ea_version: String((body as Record<string, unknown>).ea_version ?? 'unknown'),
+      timestamp: new Date().toISOString(),
+    };
+    state.tradeResults.push(result);
+    if (state.tradeResults.length > 500) {
+      state.tradeResults = state.tradeResults.slice(-500);
+    }
+    updateAiStats(state);
+    return NextResponse.json(
+      { ok: true, client_id: clientId, result, ai_stats: state.aiStats, timestamp: result.timestamp },
+      { status: 200 }
+    );
   }
 
   if (eventType === 'open_trades') {

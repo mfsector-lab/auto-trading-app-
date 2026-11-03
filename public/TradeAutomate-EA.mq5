@@ -1,5 +1,5 @@
-//+------------------------------------------------------------------+
-//| TradeAutomate AI - Expert Advisor v1.20 (MT5)                    |
+﻿//+------------------------------------------------------------------+
+//| TradeAutomate_Bridge - Expert Advisor v1.20 (MT5)                |
 //| Signal + Scalp execution bridge for MetaTrader 5                 |
 //+------------------------------------------------------------------+
 #property strict
@@ -270,6 +270,31 @@ void SendRejectionEvent(string reason, string detail, string sym) {
   PostEvent(payload, "rejection");
 }
 
+void SendTradeResultEvent(string action, string sym, ulong ticket, double lot, double openPrice, double closePrice, double profit, int durationSeconds) {
+  double pipVal = PipValueForSymbol(sym);
+  int pips = 0;
+  if (pipVal > 0) {
+    if (action == "BUY") pips = (int)((closePrice - openPrice) / pipVal);
+    else pips = (int)((openPrice - closePrice) / pipVal);
+  }
+  string outcome = profit >= 0 ? "WIN" : "LOSS";
+  string payload = StringFormat(
+    "{\"client_id\":\"%s\",\"event_type\":\"trade_result\",\"action\":\"%s\",\"symbol\":\"%s\",\"ticket\":%I64u,\"lot\":%G,\"open_price\":%G,\"close_price\":%G,\"profit\":%G,\"pips\":%d,\"outcome\":\"%s\",\"duration_seconds\":%d,\"ea_version\":\"v1.20-mt5\"}",
+    JsonEscape(ClientId),
+    action,
+    JsonEscape(sym),
+    ticket,
+    lot,
+    openPrice,
+    closePrice,
+    profit,
+    pips,
+    outcome,
+    durationSeconds
+  );
+  PostEvent(payload, "trade_result");
+}
+
 int SkipWs(string text, int idx) {
   int len = StringLen(text);
   while (idx < len) {
@@ -531,6 +556,29 @@ void OnTimer() {
   // Send open_trades snapshot every 3rd tick (every 15 seconds) to reduce API load
   if (HeartbeatTickCount % 3 == 0) {
     SendOpenTradesSnapshot(chartSym);
+  }
+
+  // Check for newly closed deals for AI self-learning
+  static ulong lastDealTicket = 0;
+  if (HistorySelect(0, TimeCurrent())) {
+    int dealTotal = HistoryDealsTotal();
+    for (int di = dealTotal - 1; di >= 0; di--) {
+      ulong dTicket = HistoryDealGetTicket(di);
+      if (dTicket == 0 || dTicket <= lastDealTicket) break;
+      long dEntry = HistoryDealGetInteger(dTicket, DEAL_ENTRY);
+      if (dEntry != DEAL_ENTRY_OUT) continue;
+      long dMagic = HistoryDealGetInteger(dTicket, DEAL_MAGIC);
+      if (dMagic != MagicSignal && dMagic != MagicScalp) continue;
+      string dSym = HistoryDealGetString(dTicket, DEAL_SYMBOL);
+      long dType = HistoryDealGetInteger(dTicket, DEAL_TYPE);
+      string dAction = (dType == DEAL_TYPE_BUY) ? "BUY" : "SELL";
+      double dLot = HistoryDealGetDouble(dTicket, DEAL_VOLUME);
+      double dPrice = HistoryDealGetDouble(dTicket, DEAL_PRICE);
+      double dProfit = HistoryDealGetDouble(dTicket, DEAL_PROFIT) + HistoryDealGetDouble(dTicket, DEAL_SWAP) + HistoryDealGetDouble(dTicket, DEAL_COMMISSION);
+      long dTime = HistoryDealGetInteger(dTicket, DEAL_TIME);
+      SendTradeResultEvent(dAction, dSym, dTicket, dLot, 0.0, dPrice, dProfit, 0);
+      if (dTicket > lastDealTicket) lastDealTicket = dTicket;
+    }
   }
 
   string body = "";

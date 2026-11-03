@@ -6,6 +6,7 @@ import { Download, Menu, X } from 'lucide-react';
 
 const links = [
   { href: '/', label: 'Dashboard' },
+  { href: '/bridge', label: 'MT4/MT5 Bridge' },
   { href: '/download', label: 'Download' },
   { href: '/settings', label: 'Settings' },
   { href: '/privacy', label: 'Privacy' },
@@ -43,7 +44,7 @@ export default function Nav() {
           ))}
           <a
             href="/TradeAutomate-EA.mq4"
-            download
+            download="TradeAutomate_Bridge.mq4"
             className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-white hover:bg-violet-500"
           >
             <Download size={12} />
@@ -72,7 +73,7 @@ export default function Nav() {
                 {link.label}
               </Link>
             ))}
-            <a href="/TradeAutomate-EA.mq4" download className="rounded-lg px-2 py-1 hover:bg-slate-800" onClick={() => setOpen(false)}>
+            <a href="/TradeAutomate-EA.mq4" download="TradeAutomate_Bridge.mq4" className="rounded-lg px-2 py-1 hover:bg-slate-800" onClick={() => setOpen(false)}>
               Download EA
             </a>
           </div>

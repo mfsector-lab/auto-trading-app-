@@ -1,5 +1,5 @@
-//+------------------------------------------------------------------+
-//| TradeAutomate AI - Expert Advisor v1.00                          |
+﻿//+------------------------------------------------------------------+
+//| TradeAutomate_Bridge - Expert Advisor v1.10                      |
 //| Signal + Scalp execution bridge for MT4                          |
 //+------------------------------------------------------------------+
 #property strict
@@ -249,6 +249,31 @@ void SendRejectionEvent(string reason, string detail, string sym) {
     JsonEscape(sym)
   );
   PostEvent(payload, "rejection");
+}
+
+void SendTradeResultEvent(string action, string sym, int ticket, double lot, double openPrice, double closePrice, double profit, int durationSeconds) {
+  int pips = 0;
+  double pipVal = PipValueForSymbol(sym);
+  if (pipVal > 0) {
+    if (action == "BUY") pips = (int)((closePrice - openPrice) / pipVal);
+    else pips = (int)((openPrice - closePrice) / pipVal);
+  }
+  string outcome = profit >= 0 ? "WIN" : "LOSS";
+  string payload = StringFormat(
+    "{\"client_id\":\"%s\",\"event_type\":\"trade_result\",\"action\":\"%s\",\"symbol\":\"%s\",\"ticket\":%d,\"lot\":%G,\"open_price\":%G,\"close_price\":%G,\"profit\":%G,\"pips\":%d,\"outcome\":\"%s\",\"duration_seconds\":%d,\"ea_version\":\"v1.10\"}",
+    JsonEscape(ClientId),
+    action,
+    JsonEscape(sym),
+    ticket,
+    lot,
+    openPrice,
+    closePrice,
+    profit,
+    pips,
+    outcome,
+    durationSeconds
+  );
+  PostEvent(payload, "trade_result");
 }
 
 int SkipWs(string text, int idx) {
@@ -625,6 +650,23 @@ void OnTimer() {
   // Send open_trades snapshot every 3rd tick (every 15 seconds) to reduce API load
   if (HeartbeatTickCount % 3 == 0) {
     SendOpenTradesSnapshot(Symbol());
+  }
+
+  // Check for newly closed trades and report them for AI self-learning
+  static int prevHistoryCount = 0;
+  int currentHistory = OrdersHistoryTotal();
+  if (currentHistory > prevHistoryCount) {
+    for (int hi = currentHistory - 1; hi >= prevHistoryCount; hi--) {
+      if (!OrderSelect(hi, SELECT_BY_POS, MODE_HISTORY)) continue;
+      int otype = OrderType();
+      if (otype != OP_BUY && otype != OP_SELL) continue;
+      int magic = OrderMagicNumber();
+      if (magic != MagicSignal && magic != MagicScalp) continue;
+      string side = (otype == OP_BUY) ? "BUY" : "SELL";
+      int dur = (int)(OrderCloseTime() - OrderOpenTime());
+      SendTradeResultEvent(side, OrderSymbol(), OrderTicket(), OrderLots(), OrderOpenPrice(), OrderClosePrice(), OrderProfit() + OrderSwap() + OrderCommission(), dur);
+    }
+    prevHistoryCount = currentHistory;
   }
 
   string body = "";

@@ -19,6 +19,9 @@ export default function DerivConnect() {
   const [wsState, setWsState] = useState<WsState>('idle');
   const [lastTick, setLastTick] = useState<string>('');
   const [tickCount, setTickCount] = useState(0);
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenMsg, setTokenMsg] = useState('');
+  const [tokenBusy, setTokenBusy] = useState(false);
   const [balance, setBalance] = useState<{ v: number; c: string } | null>(null);
   const socketRef = useRef<DerivSocket | null>(null);
 
@@ -29,6 +32,52 @@ export default function DerivConnect() {
     setAccounts(stored);
     setActive(stored[0] ?? null);
   }, []);
+
+  /** PAT login: Deriv's official no-redirect protocol. Authorize over the
+   *  existing WebSocket, store the session, stream balance + ticks. */
+  const loginWithToken = useCallback(async () => {
+    const token = tokenInput.trim();
+    if (!token) return;
+    setTokenBusy(true);
+    setTokenMsg('Authorizing with Deriv…');
+    try {
+      const sock = new DerivSocket();
+      sock.connect(async () => {
+        try {
+          const res = await sock.authorize(token);
+          const a = res.authorize as Record<string, unknown>;
+          const account: DerivAccount = {
+            index: 1,
+            loginid: String(a.loginid ?? ''),
+            token,
+            currency: String(a.currency ?? 'USD'),
+          };
+          saveSessions([account]);
+          setAccounts(loadSessions());
+          setActive(account);
+          setTokenInput('');
+          setWsState('authorized');
+          setTokenMsg(`Signed in as ${account.loginid} (${String(a.is_virtual) === '1' ? 'DEMO' : 'REAL'}).`);
+          socketRef.current?.close();
+          socketRef.current = sock;
+          await sock.subscribeBalance();
+          sock.onBalance((b) => setBalance({ v: Number(b.balance ?? 0), c: String(b.currency ?? account.currency) }));
+          await sock.subscribeTicks('R_10', (msg) => {
+            const t = msg.tick as Record<string, unknown> | undefined;
+            if (t) { setLastTick(String(t.quote ?? '')); setTickCount((x) => x + 1); }
+          });
+        } catch (e) {
+          sock.close();
+          setTokenMsg(`Deriv rejected the token: ${e instanceof Error ? e.message : 'unknown error'}`);
+        } finally {
+          setTokenBusy(false);
+        }
+      });
+    } catch {
+      setTokenMsg('Could not reach Deriv.');
+      setTokenBusy(false);
+    }
+  }, [tokenInput]);
 
   const connectOAuth = useCallback(() => {
     window.location.href = derivOAuthRedirect(window.location.origin);
@@ -113,6 +162,33 @@ export default function DerivConnect() {
           >
             Log out
           </button>
+        )}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+        <p className="text-xs font-semibold text-emerald-200">Sign in with Deriv API token</p>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Create a token at app.deriv.com → Settings → API token (scopes: <b>read</b> + <b>trade</b>),
+          paste it here, and your real balance and trading go live instantly — no Deriv app registration needed.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <input
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value.trim())}
+            onKeyDown={(e) => { if (e.key === 'Enter') void loginWithToken(); }}
+            placeholder="Paste your Deriv API token"
+            type="password"
+            className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100 placeholder:text-slate-500"
+          />
+          <button onClick={() => void loginWithToken()} disabled={tokenBusy || !tokenInput}
+            className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40">
+            {tokenBusy ? 'Connecting…' : 'Connect'}
+          </button>
+        </div>
+        {tokenMsg && (
+          <p className={`mt-1 text-[11px] ${tokenMsg.startsWith('Signed in') ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {tokenMsg}
+          </p>
         )}
       </div>
 

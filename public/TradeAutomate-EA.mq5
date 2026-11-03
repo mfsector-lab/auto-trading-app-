@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //| TradeAutomate_Bridge - Expert Advisor v1.20 (MT5)                |
 //| Signal + Scalp execution bridge for MetaTrader 5                 |
 //+------------------------------------------------------------------+
@@ -32,6 +32,22 @@ CTrade Trade;
 string LastSignalId = "";
 bool BotEnabledState = true;
 int HeartbeatTickCount = 0;
+
+string UrlEncode(string text) {
+  string out = "";
+  int len = StringLen(text);
+  for (int i = 0; i < len; i++) {
+    ushort c = StringGetCharacter(text, i);
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += ShortToString(c);
+    } else if (c == ' ') {
+      out += "%20";
+    } else {
+      out += StringFormat("%%%02X", c);
+    }
+  }
+  return(out);
+}
 
 int OnInit() {
   EventSetTimer(5);
@@ -118,7 +134,10 @@ bool PostEvent(string payload, string tag) {
   string headers = "Content-Type: application/json\r\nAuthorization: Bearer " + AuthToken;
   char postData[], result[];
   string resultHeaders;
-  StringToCharArray(payload, postData, 0, WHOLE_ARRAY, CP_UTF8);
+  StringToCharArray(payload, postData, 0, StringLen(payload), CP_UTF8);
+  if (ArraySize(postData) > 0 && postData[ArraySize(postData) - 1] == 0) {
+    ArrayResize(postData, ArraySize(postData) - 1);
+  }
 
   string postUrl = EventURL;
   if (postUrl == "") postUrl = AppURL;
@@ -176,7 +195,7 @@ double OpenProfitAllTrades() {
     if (ticket == 0 || !PositionSelectByTicket(ticket)) continue;
     long type = PositionGetInteger(POSITION_TYPE);
     if (type != POSITION_TYPE_BUY && type != POSITION_TYPE_SELL) continue;
-    total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + 0.0; // POSITION_COMMISSION removed (deprecated)
+    total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + 0.0;
   }
   return(total);
 }
@@ -217,7 +236,7 @@ void SendOpenTradesSnapshot(string sym) {
     string psym = PositionGetString(POSITION_SYMBOL);
     double lot = PositionGetDouble(POSITION_VOLUME);
     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-    double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + 0.0; // POSITION_COMMISSION removed (deprecated)
+    double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + 0.0;
     long magic = PositionGetInteger(POSITION_MAGIC);
     double sl = PositionGetDouble(POSITION_SL);
     double tp = PositionGetDouble(POSITION_TP);
@@ -434,11 +453,24 @@ bool FetchSignalBody(string mode, string &bodyOut) {
   string headers = "Authorization: Bearer " + AuthToken;
   char postData[], result[];
   string resultHeaders;
-  string url = AppURL + "?mode=" + mode + "&limit=1&client_id=" + ClientId;
+
+  string accountMode = IsDemoAccount() ? "DEMO" : "LIVE";
+  string brokerName = UrlEncode(AccountInfoString(ACCOUNT_COMPANY));
+  string serverName = UrlEncode(AccountInfoString(ACCOUNT_SERVER));
+  long accountNum = (long)AccountInfoInteger(ACCOUNT_LOGIN);
+  int openCnt = CountOpenAllTrades();
+  double openPft = OpenProfitAllTrades();
+
+  string query = StringFormat(
+    "?mode=%s&limit=1&client_id=%s&ea_version=v1.20-mt5&account_mode=%s&broker=%s&server=%s&account=%I64d&open_count=%d&open_profit=%G&symbol=%s&platform=MT5",
+    mode, ClientId, accountMode, brokerName, serverName, accountNum, openCnt, openPft, _Symbol
+  );
+
+  string url = AppURL + query;
   ResetLastError();
   int response = WebRequest("GET", url, headers, RequestTimeoutMs, postData, result, resultHeaders);
   if (response != 200 && BackupAppURL != "") {
-    string backupUrl = BackupAppURL + "?mode=" + mode + "&limit=1&client_id=" + ClientId;
+    string backupUrl = BackupAppURL + query;
     ResetLastError();
     response = WebRequest("GET", backupUrl, headers, RequestTimeoutMs, postData, result, resultHeaders);
     if (response == 200) {
@@ -553,7 +585,6 @@ void OnTimer() {
   string chartSym = _Symbol;
   HeartbeatTickCount++;
   SendHeartbeat(chartSym);
-  // Send open_trades snapshot every 3rd tick (every 15 seconds) to reduce API load
   if (HeartbeatTickCount % 3 == 0) {
     SendOpenTradesSnapshot(chartSym);
   }
@@ -575,7 +606,6 @@ void OnTimer() {
       double dLot = HistoryDealGetDouble(dTicket, DEAL_VOLUME);
       double dPrice = HistoryDealGetDouble(dTicket, DEAL_PRICE);
       double dProfit = HistoryDealGetDouble(dTicket, DEAL_PROFIT) + HistoryDealGetDouble(dTicket, DEAL_SWAP) + HistoryDealGetDouble(dTicket, DEAL_COMMISSION);
-      long dTime = HistoryDealGetInteger(dTicket, DEAL_TIME);
       SendTradeResultEvent(dAction, dSym, dTicket, dLot, 0.0, dPrice, dProfit, 0);
       if (dTicket > lastDealTicket) lastDealTicket = dTicket;
     }

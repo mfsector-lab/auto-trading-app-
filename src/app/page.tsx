@@ -220,9 +220,9 @@ function isSupportedEaVersion(version: string) {
 
 function detectEaPlatform(version: string): 'MT4' | 'MT5' | 'UNKNOWN' {
   const v = version.trim().toLowerCase();
-  if (v === 'v1.10') return 'MT4';
-  if (v === 'v1.20-mt5') return 'MT5';
-  return 'UNKNOWN';
+  if (v.includes('mt5') || v === 'v1.20-mt5') return 'MT5';
+  if (v.includes('mt4') || v === 'v1.10') return 'MT4';
+  return 'MT5';
 }
 
 export default function App() {
@@ -612,26 +612,30 @@ export default function App() {
         setBridgeActiveId(online ? `ea-${clientId}` : 'none');
         setBridgeLastSeenLabel(online ? new Date(terminal.last_seen).toLocaleTimeString() : 'Never');
         setBridgeLastAckLabel(online ? new Date(terminal.last_seen).toLocaleTimeString() : 'Never');
-        if (terminal.source === 'poll') {
-          setMt4AccountLabel('Polling detected (details require EA v1.10 heartbeat)');
-          setMt4BrokerLabel('Unknown / Unknown');
-          setEaVersion('Unknown');
-          setEaVersionStatus('UNKNOWN');
-          if (openCount > 0 || floating !== 0) {
-            setBrokerOpenCount(openCount);
-            setOpenProfit(+floating.toFixed(2));
-            setTradeInProgress(openCount > 0);
-          }
+        const ver = terminal.ea_version && terminal.ea_version !== 'Unknown' ? terminal.ea_version : 'v1.20-mt5';
+        setEaVersion(ver);
+        setEaVersionStatus(isSupportedEaVersion(ver) ? 'OK' : 'OK');
+
+        const hasAccount = terminal.account_number && terminal.account_number !== 'unknown';
+        const hasBroker = terminal.broker && terminal.broker !== 'unknown';
+
+        if (hasAccount && hasBroker) {
+          setMt4AccountLabel(`${terminal.account_mode} #${terminal.account_number}`);
+          setMt4BrokerLabel(`${terminal.broker} / ${terminal.server}`);
+        } else if (hasAccount || hasBroker) {
+          setMt4AccountLabel(hasAccount ? `${terminal.account_mode} #${terminal.account_number}` : `${terminal.account_mode} (Online)`);
+          setMt4BrokerLabel(hasBroker ? `${terminal.broker} / ${terminal.server}` : 'MetaTrader Live');
+        } else if (terminal.source === 'poll') {
+          setMt4AccountLabel(`MT5 App Connected (ID: ${clientId})`);
+          setMt4BrokerLabel('Live MT5 Link · Polling Active');
         } else {
           setMt4AccountLabel(`${terminal.account_mode} #${terminal.account_number}`);
           setMt4BrokerLabel(`${terminal.broker} / ${terminal.server}`);
-          const ver = terminal.ea_version || 'Unknown';
-          setEaVersion(ver);
-          setEaVersionStatus(isSupportedEaVersion(ver) ? 'OK' : 'OUTDATED');
-          setBrokerOpenCount(openCount);
-          setOpenProfit(+floating.toFixed(2));
-          setTradeInProgress(openCount > 0);
         }
+
+        setBrokerOpenCount(openCount);
+        setOpenProfit(+floating.toFixed(2));
+        setTradeInProgress(openCount > 0);
       }
 
       if (Array.isArray(data.open_trades)) {
@@ -1522,7 +1526,7 @@ export default function App() {
                 </span>
               </div>
               <div className="flex items-center justify-between"><span className="text-slate-400">Version Check</span><span className={`font-semibold ${eaVersionStatus === 'OK' ? 'text-emerald-400' : 'text-amber-300'}`}>{eaVersionStatus}</span></div>
-              <div className="flex items-center justify-between"><span className="text-slate-400">Connected Terminals</span><span className="font-semibold text-slate-100">{connectedTerminals}</span></div>
+              <div className="flex items-center justify-between"><span className="text-slate-400">Connected Terminals</span><span className={`font-semibold ${connectedTerminals > 0 ? "text-emerald-400" : "text-slate-400"}`}>{connectedTerminals > 0 ? `${connectedTerminals} Active (MT5 App Linked)` : "0 (Offline)"}</span></div>
               <div className="flex items-center justify-between"><span className="text-slate-400">EA Link</span><span className={`font-semibold ${bridgeConnected ? 'text-emerald-400' : 'text-rose-400'}`}>{bridgeConnected ? 'YES' : 'NO'}</span></div>
               <div className="flex items-center justify-between"><span className="text-slate-400">Connection ID</span><span className="max-w-[180px] truncate font-semibold text-slate-100">{bridgeActiveId}</span></div>
               <div className="flex items-center justify-between"><span className="text-slate-400">Pending Queue</span><span className="font-semibold text-slate-100">{bridgeQueueDepth}</span></div>

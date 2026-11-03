@@ -226,7 +226,7 @@ function toNumber(value: unknown, fallback: number): number {
 }
 
 function parseBodyText(raw: string): Record<string, unknown> {
-  const text = raw.trim();
+  const text = raw.replace(/\0/g, '').trim();
   if (!text) return {};
   try {
     const parsed = JSON.parse(text) as unknown;
@@ -350,17 +350,37 @@ export async function GET(request: NextRequest) {
   const mode = searchParams.get('mode') ?? 'signal';
 
   if (!searchParams.get('status')) {
+    const queryBroker = searchParams.get('broker');
+    const queryServer = searchParams.get('server');
+    const queryAccount = searchParams.get('account') ?? searchParams.get('account_number');
+    const queryMode = searchParams.get('account_mode');
+    const queryEaVersion = searchParams.get('ea_version');
+    const queryOpenCount = searchParams.get('open_count');
+    const queryOpenProfit = searchParams.get('open_profit');
+    const querySymbol = searchParams.get('symbol');
+    const queryPlatform = searchParams.get('platform');
+
+    const normalizedMode = queryMode?.toUpperCase() === 'DEMO'
+      ? 'DEMO'
+      : queryMode?.toUpperCase() === 'LIVE'
+        ? 'LIVE'
+        : (state.lastTerminalStatus?.account_mode ?? 'UNKNOWN');
+
+    const effectiveVersion = queryEaVersion
+      || state.lastTerminalStatus?.ea_version
+      || (queryPlatform === 'MT5' ? 'v1.20-mt5' : 'v1.10');
+
     state.lastTerminalStatus = {
-      account_mode: state.lastTerminalStatus?.account_mode ?? 'UNKNOWN',
-      broker: state.lastTerminalStatus?.broker ?? 'unknown',
-      server: state.lastTerminalStatus?.server ?? 'unknown',
-      account_number: state.lastTerminalStatus?.account_number ?? 'unknown',
-      symbol: state.lastTerminalStatus?.symbol ?? 'unknown',
+      account_mode: normalizedMode,
+      broker: queryBroker || state.lastTerminalStatus?.broker || 'unknown',
+      server: queryServer || state.lastTerminalStatus?.server || 'unknown',
+      account_number: queryAccount || state.lastTerminalStatus?.account_number || 'unknown',
+      symbol: querySymbol || state.lastTerminalStatus?.symbol || 'unknown',
       last_seen: new Date().toISOString(),
-      source: state.lastTerminalStatus?.source === 'heartbeat' ? 'heartbeat' : 'poll',
-      ea_version: state.lastTerminalStatus?.ea_version,
-      open_count: state.lastTerminalStatus?.open_count,
-      open_profit: state.lastTerminalStatus?.open_profit,
+      source: (queryBroker || queryEaVersion) ? 'heartbeat' : (state.lastTerminalStatus?.source === 'heartbeat' ? 'heartbeat' : 'poll'),
+      ea_version: effectiveVersion,
+      open_count: queryOpenCount !== null && queryOpenCount !== undefined ? Math.max(0, parseInt(queryOpenCount, 10)) : (state.lastTerminalStatus?.open_count ?? 0),
+      open_profit: queryOpenProfit !== null && queryOpenProfit !== undefined ? parseFloat(queryOpenProfit) : (state.lastTerminalStatus?.open_profit ?? 0),
     };
   }
 

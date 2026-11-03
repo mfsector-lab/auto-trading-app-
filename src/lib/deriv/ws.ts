@@ -14,7 +14,7 @@ export class DerivSocket {
   private openHandlers = new Set<Handler>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private backoffMs = 1000;
-  private closedByUser = false;
+  public closedByUser = false;
   public authorized = false;
 
   connect(onOpen?: Handler, onClose?: Handler): void {

@@ -7,6 +7,8 @@ import { Download, Menu, X } from 'lucide-react';
 const links = [
   { href: '/', label: 'Dashboard' },
   { href: '/bridge', label: 'MT4/MT5 Bridge' },
+  { href: '/deriv', label: 'Deriv Digits' },
+  { href: '/sygnal', label: 'Sygnal' },
   { href: '/download', label: 'Download' },
   { href: '/settings', label: 'Settings' },
   { href: '/privacy', label: 'Privacy' },

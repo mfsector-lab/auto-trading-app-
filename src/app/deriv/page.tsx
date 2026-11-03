@@ -1,4 +1,5 @@
 import Nav from '@/components/Nav';
+import DerivConnect from '@/components/deriv/DerivConnect';
 
 export const metadata = {
   title: 'Deriv Digits | Dark Venus Auto Bot',
@@ -9,6 +10,9 @@ export default function DerivPage() {
     <div className="flex min-h-screen flex-col bg-slate-950">
       <Nav />
       <main className="flex flex-1 flex-col">
+        <div className="px-4 py-3">
+          <DerivConnect />
+        </div>
         <div className="flex items-center justify-between border-b border-violet-500/20 bg-slate-900/60 px-4 py-2">
           <p className="text-xs font-semibold text-slate-300">
             Deriv synthetic indices digit engine — runs in a live frame from autotrading.autos

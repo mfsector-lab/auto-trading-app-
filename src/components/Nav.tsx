@@ -9,6 +9,7 @@ const links = [
   { href: '/bridge', label: 'MT4/MT5 Bridge' },
   { href: '/deriv', label: 'Deriv Digits' },
   { href: '/sygnal', label: 'Sygnal' },
+  { href: '/art', label: 'Art Platform' },
   { href: '/download', label: 'Download' },
   { href: '/settings', label: 'Settings' },
   { href: '/privacy', label: 'Privacy' },

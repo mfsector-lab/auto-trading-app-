@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DERIV_APP_ID, derivOAuthRedirect } from '@/lib/deriv/config';
+import { derivOAuthRedirect, getDerivAppId, setDerivAppIdOverride, isTestAppId } from '@/lib/deriv/config';
 import {
   clearSessions,
   consumeOAuthParamsIfPresent,
@@ -18,11 +18,14 @@ export default function DerivConnect() {
   const [wsState, setWsState] = useState<WsState>('idle');
   const [lastTick, setLastTick] = useState<string>('');
   const [tickCount, setTickCount] = useState(0);
+  const [appId, setAppId] = useState('1089');
+  const [appIdInput, setAppIdInput] = useState('');
   const socketRef = useRef<DerivSocket | null>(null);
 
   useEffect(() => {
     // Handles both /deriv/callback landing and params landing on /deriv itself
     consumeOAuthParamsIfPresent();
+    setAppId(getDerivAppId());
     const stored = loadSessions();
     setAccounts(stored);
     setActive(stored[0] ?? null);
@@ -31,6 +34,13 @@ export default function DerivConnect() {
   const connectOAuth = useCallback(() => {
     window.location.href = derivOAuthRedirect(window.location.origin);
   }, []);
+
+  const applyOverride = useCallback(() => {
+    if (!appIdInput.trim()) return;
+    setDerivAppIdOverride(appIdInput.trim());
+    setAppId(getDerivAppId());
+    setAppIdInput('');
+  }, [appIdInput]);
 
   const initSocket = useCallback(async (account: DerivAccount) => {
     setWsState('connecting');
@@ -132,8 +142,8 @@ export default function DerivConnect() {
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] md:grid-cols-4">
         <div className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5">
-          <p className="text-slate-500">App ID</p>
-          <p className="font-semibold text-slate-200">{DERIV_APP_ID}</p>
+          <p className="text-slate-500">App ID {isTestAppId(appId) ? '(test)' : '(registered)'}</p>
+          <p className={`font-semibold ${isTestAppId(appId) ? 'text-amber-300' : 'text-emerald-300'}`}>{appId}</p>
         </div>
         <div className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5">
           <p className="text-slate-500">WebSocket</p>
@@ -151,11 +161,32 @@ export default function DerivConnect() {
         </div>
       </div>
 
-      <p className="mt-2 text-[10px] text-slate-500">
-        Using app id {DERIV_APP_ID} (Deriv test app). Register your own at api.deriv.com and set
-        NEXT_PUBLIC_DERIV_APP_ID; add this callback URL in your Deriv app settings:
-        https://tradeautomate-ai.vercel.app/deriv/callback
-      </p>
+      {isTestAppId(appId) && (
+        <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+          <p className="font-bold">Setup required — auto-return after login is disabled while using Deriv&apos;s test app.</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+            <li>Register your app at <a href="https://api.deriv.com" target="_blank" rel="noreferrer" className="underline">api.deriv.com</a> (free, uses your Deriv login).</li>
+            <li>App URL: <code>https://tradeautomate-ai.vercel.app</code></li>
+            <li>Redirect URL: <code>https://tradeautomate-ai.vercel.app/deriv/callback</code></li>
+            <li>Paste your new App ID below — it applies instantly, no redeploy needed.</li>
+          </ol>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={appIdInput}
+              onChange={(e) => setAppIdInput(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="Your Deriv App ID"
+              inputMode="numeric"
+              className="flex-1 rounded-lg border border-amber-400/40 bg-slate-950 px-2 py-1.5 text-slate-100 placeholder:text-slate-500"
+            />
+            <button onClick={applyOverride} className="rounded-lg bg-amber-500 px-3 py-1.5 font-bold text-slate-950 hover:bg-amber-400">
+              Save
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-amber-200/70">
+            For production, also set NEXT_PUBLIC_DERIV_APP_ID in Vercel env vars.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

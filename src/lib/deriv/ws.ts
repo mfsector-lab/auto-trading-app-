@@ -2,7 +2,7 @@
  * Minimal Deriv WebSocket client with authorize, tick subscription,
  * keepalive ping and exponential-backoff reconnect.
  */
-import { DERIV_WS_URL } from './config';
+import { derivWsUrl } from './config';
 
 type Handler = (data: Record<string, unknown>) => void;
 
@@ -23,7 +23,7 @@ export class DerivSocket {
   connect(onOpen?: Handler, onClose?: Handler): void {
     this.closedByUser = false;
     try {
-      this.ws = new WebSocket(DERIV_WS_URL);
+      this.ws = new WebSocket(derivWsUrl());
     } catch {
       this.scheduleReconnect(onOpen, onClose);
       return;

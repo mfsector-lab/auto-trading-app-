@@ -741,6 +741,20 @@ def poll_loop() -> None:
                 if isinstance(settings_payload, dict):
                     merge_settings(settings_payload)
 
+                # Strategy mode lives in the dashboard signal store (separate
+                # server state from /api/bridge settings) — read it every poll.
+                try:
+                    sr = requests.get(
+                        f"{API_SIGNALS_URL}?status=1&client_id={BRIDGE_CLIENT_ID}",
+                        timeout=5,
+                    )
+                    sr.raise_for_status()
+                    sm = ((sr.json().get("queued_signal") or {}).get("strategy_mode"))
+                    if sm:
+                        state["settings"]["strategy_mode"] = str(sm).upper()
+                except Exception:
+                    pass
+
                 if not was_poll_ok:
                     _force_auto_scan("bridge_reconnect")
 

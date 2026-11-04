@@ -336,6 +336,8 @@ def _pip_size(symbol: str) -> float:
         return 0.01
     if s.startswith("XAU"):
         return 0.1
+    if s.startswith("XAG"):
+        return 0.01
     if s.startswith("BTC"):
         return 1.0
     if s in ("US500", "NAS100"):
@@ -398,6 +400,8 @@ def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = 
     min_sl = _safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0)
     sl_pips = max(1, int(round(atr_price / pip_size))) if pip_size > 0 else 7
     sl_pips = max(sl_pips, int(min_sl))  # floor: user default 500 points = 50 pips
+    if _is_precious_metal(symbol):
+        sl_pips = max(sl_pips, 300)  # gold/silver need wider stops: 300 pips = $30 on gold
     tp_pips = max(1, int(round(sl_pips * rr_ratio)))
 
     lot_size = 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot)

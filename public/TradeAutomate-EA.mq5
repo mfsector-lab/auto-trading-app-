@@ -27,6 +27,9 @@ input string RequiredAccountMode = "AUTO";
 input bool   UseSignalFile = true;
 input string SignalFileName = "TradeSignal.txt";
 input int    DefaultSignalFileTrades = 3;
+input bool   EnableTrailing   = true;
+input int    TrailStartPoints = 550;   // start trailing at this profit (points)
+input int    TrailDistancePoints = 250; // keep SL this far behind price
 
 CTrade Trade;
 string LastSignalId = "";
@@ -579,11 +582,48 @@ ulong FindLatestPositionTicket(string sym, int magic, int positionType) {
   return(bestTicket);
 }
 
+void ManageTrailing() {
+  if (!EnableTrailing || TrailStartPoints <= 0) return;
+  int total = PositionsTotal();
+  for (int i = total - 1; i >= 0; i--) {
+    ulong ticket = PositionGetTicket(i);
+    if (ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+    long magic = PositionGetInteger(POSITION_MAGIC);
+    if (magic != MagicSignal && magic != MagicScalp) continue;
+    string sym = PositionGetString(POSITION_SYMBOL);
+    long type = PositionGetInteger(POSITION_TYPE);
+    if (type != POSITION_TYPE_BUY && type != POSITION_TYPE_SELL) continue;
+
+    double open = PositionGetDouble(POSITION_PRICE_OPEN);
+    double sl = PositionGetDouble(POSITION_SL);
+    double tp = PositionGetDouble(POSITION_TP);
+    double point = SymbolInfoDouble(sym, SYMBOL_POINT);
+    if (point <= 0) continue;
+    MqlTick tick;
+    if (!SymbolInfoTick(sym, tick)) continue;
+
+    if (type == POSITION_TYPE_BUY) {
+      double profitPts = (tick.bid - open) / point;
+      if (profitPts >= TrailStartPoints) {
+        double newSl = NormalizePriceForSymbol(sym, tick.bid - TrailDistancePoints * point);
+        if (sl <= 0 || newSl > sl + point * 0.5) ApplyStopsIfPossible(sym, ticket, (int)type, newSl, tp);
+      }
+    } else {
+      double profitPts = (open - tick.ask) / point;
+      if (profitPts >= TrailStartPoints) {
+        double newSl = NormalizePriceForSymbol(sym, tick.ask + TrailDistancePoints * point);
+        if (sl <= 0 || newSl < sl - point * 0.5) ApplyStopsIfPossible(sym, ticket, (int)type, newSl, tp);
+      }
+    }
+  }
+}
+
 void OnTimer() {
   string mode = ScalpMode ? "scalp" : "signal";
   string source = "web";
   string chartSym = _Symbol;
   HeartbeatTickCount++;
+  ManageTrailing();
   SendHeartbeat(chartSym);
   if (HeartbeatTickCount % 3 == 0) {
     SendOpenTradesSnapshot(chartSym);

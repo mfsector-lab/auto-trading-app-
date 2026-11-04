@@ -35,6 +35,7 @@ type SignalPayload = {
   scoped_symbols_csv: string;
   autonomous_mode?: boolean;
   strategy_mode?: string;
+  rr_ratio?: number;
   timestamp: string;
 };
 
@@ -632,6 +633,7 @@ export async function POST(request: NextRequest) {
     strategy_mode: typeof (body as Record<string, unknown>).strategy_mode === 'string'
       ? String((body as Record<string, unknown>).strategy_mode)
       : undefined,
+    rr_ratio: toNumber((body as Record<string, unknown>).rr_ratio, 2.0),
     timestamp: new Date().toISOString(),
   };
 

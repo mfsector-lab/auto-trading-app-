@@ -42,7 +42,9 @@ state: Dict[str, Any] = {
         "auto_order_lot": 0.01,
         "auto_scan_enabled": True,
         "autonomous_mode": False,
-        "strategy_mode": "MOMENTUM_ALPHA",
+        "strategy_mode": "DASHBOARD_SIGNALS",
+        "rr_ratio": 2.0,
+        "min_sl_pips": 50.0,
         "max_daily_loss": 250,
         "max_lot": 0.1,
         "no_trade_windows_utc": "",
@@ -392,13 +394,26 @@ def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = 
     atr_values = _atr_series(highs, lows, closes, ATR_LEN)
     atr_price = max(0.0, atr_values[-1] * ATR_STOP_MULT) if atr_values else 0.0
     pip_size = _pip_size(symbol)
+    rr_ratio = _safe_float(state["settings"].get("rr_ratio", 2.0), 2.0)
+    min_sl = _safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0)
     sl_pips = max(1, int(round(atr_price / pip_size))) if pip_size > 0 else 7
-    tp_pips = max(1, int(round(sl_pips * RISK_REWARD_RATIO)))
+    sl_pips = max(sl_pips, int(min_sl))  # floor: user default 500 points = 50 pips
+    tp_pips = max(1, int(round(sl_pips * rr_ratio)))
 
     lot_size = 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot)
     action = "HOLD"
     reason = "no_entry"
     mode = (strategy_mode or "MOMENTUM_ALPHA").upper()
+    if mode == "DASHBOARD_SIGNALS":
+        return {
+            "action": "HOLD", "strategy_mode": mode, "score": 0.0,
+            "reason": "dashboard_signals_mode", "timeframe": "5m",
+            "sl_pips": int(_safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0)),
+            "tp_pips": int(round(_safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0) * _safe_float(state["settings"].get("rr_ratio", 2.0), 2.0))),
+            "candle_ts": "", "price": closes[-1] if closes else 0.0,
+            "lot": 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot),
+            "h1_trend": "", "m5_trend": "", "rsi14": 50.0, "macd": 0.0, "signal": 0.0,
+        }
 
     # ATR regime for volatility strategies
     atr_ma = _sma([max(h - l, 1e-9) for h, l in zip(highs, lows)], 20) if len(highs) >= 20 else atr_values[-1] if atr_values else 0.0
@@ -571,8 +586,9 @@ def _build_auto_signal(payload: Dict[str, Any]) -> Dict[str, Any]:
     auto["lot"] = _safe_float(selected.get("lot", payload.get("auto_order_lot", state["settings"].get("auto_order_lot", 0.01))), 0.01)
     auto["sl_pips"] = int(selected.get("sl_pips", payload.get("sl_pips", 7)))
     auto["tp_pips"] = int(selected.get("tp_pips", payload.get("tp_pips", 12)))
-    auto["rr_ratio"] = RISK_REWARD_RATIO
+    auto["rr_ratio"] = _safe_float(state["settings"].get("rr_ratio", 2.0), 2.0)
     auto["atr_mult"] = ATR_STOP_MULT
+    auto["trailing_stop_pips"] = 55  # start trailing at 550 points
     return auto
 
 
@@ -749,9 +765,39 @@ def poll_loop() -> None:
                         timeout=5,
                     )
                     sr.raise_for_status()
-                    sm = ((sr.json().get("queued_signal") or {}).get("strategy_mode"))
+                    sd = sr.json()
+                    q = sd.get("queued_signal") or {}
+                    sm = q.get("strategy_mode")
                     if sm:
                         state["settings"]["strategy_mode"] = str(sm).upper()
+                    rr = q.get("rr_ratio")
+                    if rr:
+                        try:
+                            state["settings"]["rr_ratio"] = max(1.0, min(10.0, float(rr)))
+                        except Exception:
+                            pass
+
+                    # DASHBOARD_SIGNALS mode: the dashboard's own market cards are
+                    # the primary signal source. Pass explicit BUY/SELL through
+                    # to the EA (dedup by timestamp), like a manual Quick Send.
+                    if state["settings"].get("strategy_mode") == "DASHBOARD_SIGNALS":
+                        act = str(q.get("action", "")).upper()
+                        ts = str(q.get("timestamp", ""))
+                        if act in ("BUY", "SELL") and ts and ts != state.get("_last_dash_sig_ts"):
+                            state["_last_dash_sig_ts"] = ts
+                            latest = state["latest_signal"].copy()
+                            latest.update({
+                                "action": act,
+                                "symbol": str(q.get("symbol", latest.get("symbol", "EURUSD"))).upper(),
+                                "lot": _safe_float(q.get("lot"), state["settings"].get("auto_order_lot", 0.01)),
+                                "comment": "Dashboard_Signal",
+                                "timestamp": now_iso(),
+                            })
+                            block = _risk_gate(latest)
+                            if block:
+                                latest["action"] = "HOLD"
+                                latest["bridge_block_reason"] = block
+                            state["latest_signal"] = latest
                 except Exception:
                     pass
 
@@ -799,7 +845,16 @@ def signal():
         payload["mode"] = mode
         payload["timestamp"] = now_iso()
 
-        if payload.get("bot_enabled", True) and (bool(state["settings"].get("autonomous_mode", False)) or (bool(state["settings"].get("auto_scan_enabled", True)) and bool(state["settings"].get("scalp_mode", True)))):
+        incoming_action = str(payload.get("action", "")).upper()
+        dashboard_mode = state["settings"].get("strategy_mode") == "DASHBOARD_SIGNALS"
+        should_autoscan = (
+            payload.get("bot_enabled", True)
+            and (bool(state["settings"].get("autonomous_mode", False))
+                 or (bool(state["settings"].get("auto_scan_enabled", True)) and bool(state["settings"].get("scalp_mode", True))))
+            and not dashboard_mode
+            and incoming_action not in ("BUY", "SELL")  # never overwrite explicit trades
+        )
+        if should_autoscan:
             auto_payload = _build_auto_signal(payload)
             auto_payload.update(state["settings"])
             auto_payload["mode"] = mode

@@ -203,6 +203,7 @@ function deriveTrend(change: number): Trend {
 }
 
 const STRATEGY_MODES: Array<{ id: string; label: string; desc: string }> = [
+  { id: 'DASHBOARD_SIGNALS', label: 'Dashboard Signals (default)', desc: 'Executes the BUY/SELL cards you see on the Markets tab' },
   { id: 'MOMENTUM_ALPHA', label: 'Momentum Alpha', desc: 'Trend/momentum — multi-timeframe EMA/MACD confirmation' },
   { id: 'MEAN_REVERSION', label: 'Mean Reversion X', desc: 'Statistical reversion — Bollinger extremes + RSI' },
   { id: 'VOLATILITY_HARVEST', label: 'Volatility Harvest', desc: 'Vol-breakout — trades expanding ATR range breaks' },
@@ -282,7 +283,8 @@ export default function App() {
   const [marketClosedHint, setMarketClosedHint] = useState<string>('');
   const [botEnabled, setBotEnabled] = useState(true);
   const [autonomousMode, setAutonomousMode] = useState(false);
-  const [strategyMode, setStrategyMode] = useState('MOMENTUM_ALPHA');
+  const [strategyMode, setStrategyMode] = useState('DASHBOARD_SIGNALS');
+  const [rrRatio, setRrRatio] = useState('2.0');
   const autonomousRef = useRef(false);
   const [lockToHighlighted, setLockToHighlighted] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
@@ -753,6 +755,7 @@ export default function App() {
           scoped_symbols_csv: effectiveScoped.join(','),
           autonomous_mode: true,
           strategy_mode: strategyMode,
+          rr_ratio: Number(rrRatio) || 2.0,
         });
       } catch {
         // transient failure; next tick retries
@@ -761,6 +764,42 @@ export default function App() {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autonomousMode]);
+
+
+  // DASHBOARD_SIGNALS + Autonomous: execute the market cards automatically.
+  // Sends once per signal change per symbol (dedup), capped by scoped markets.
+  const lastAutoSent = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!autonomousMode || strategyMode !== 'DASHBOARD_SIGNALS') return;
+    for (const m of mkt) {
+      if (m.signal !== 'BUY' && m.signal !== 'SELL') continue;
+      if (!scopedSymbols.includes(m.symbol)) continue;
+      const key = `${m.symbol}:${m.signal}`;
+      if (lastAutoSent.current.get(m.symbol) === key) continue;
+      lastAutoSent.current.set(m.symbol, key);
+      void pushSignalPayload({
+        mode: 'scalp',
+        action: m.signal,
+        account_mode: accountMode,
+        symbol: m.symbol,
+        lot: parseFloat(autoOrderLot) || 0.01,
+        tp_pips: parseInt(scalp.tp) || 12,
+        sl_pips: parseInt(scalp.sl) || 7,
+        max_spread: parseFloat(scalp.spread) || 2,
+        magic: parseInt(scalp.magic) || 54321,
+        comment: 'Dashboard_Auto',
+        bot_enabled: true,
+        scalp_mode: true,
+        max_open_trades: maxActiveTrades,
+        max_daily_loss: Number(maxDailyLoss) || 0,
+        scoped_symbols_csv: scopedSymbols.join(','),
+        strategy_mode: 'DASHBOARD_SIGNALS',
+        rr_ratio: Number(rrRatio) || 2.0,
+      }).catch(() => { lastAutoSent.current.delete(m.symbol); });
+      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Auto: ${m.signal} ${m.symbol} (dashboard card signal)`, ...prev].slice(0, 30));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mkt, autonomousMode, strategyMode]);
 
   const filteredMarkets = useMemo(() => {
     if (activeSignal === 'ALL') return mkt;
@@ -941,6 +980,7 @@ export default function App() {
       only_xau_session_filter: onlyXauSessionFilter,
       scoped_symbols_csv: effectiveScoped.join(','),
       strategy_mode: strategyMode,
+      rr_ratio: Number(rrRatio) || 2.0,
     };
 
     setApplyBusy(true);
@@ -997,6 +1037,7 @@ export default function App() {
       only_xau_session_filter: onlyXauSessionFilter,
       scoped_symbols_csv: effectiveScoped.join(','),
       strategy_mode: strategyMode,
+      rr_ratio: Number(rrRatio) || 2.0,
     };
 
     try {
@@ -1052,6 +1093,7 @@ export default function App() {
           scoped_symbols_csv: effectiveScoped.join(','),
           autonomous_mode: true,
           strategy_mode: strategyMode,
+          rr_ratio: Number(rrRatio) || 2.0,
         });
         if (!botEnabled) {
           setBotEnabled(true);
@@ -1346,6 +1388,31 @@ export default function App() {
                 ))}
               </select>
               <p className="mt-1 text-[10px] text-slate-500">Applied to the bridge engine on the next Apply / Autonomous tick.</p>
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/80 p-3">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Risk : Reward Ratio (TP = SL × ratio)</label>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {['1.2', '1.5', '1.8', '2.0', '2.5', '3.0', '4.0'].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setRrRatio(v)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${rrRatio === v ? 'border-violet-400 bg-violet-500/20 text-violet-100' : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'}`}
+                  >
+                    {v}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="10"
+                  value={rrRatio}
+                  onChange={(e) => setRrRatio(e.target.value)}
+                  className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100"
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-slate-500">Default SL floor 500 points; TP = SL × ratio. Trailing starts at 550 points (EA-side).</p>
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">

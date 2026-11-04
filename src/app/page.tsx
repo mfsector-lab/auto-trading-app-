@@ -202,6 +202,14 @@ function deriveTrend(change: number): Trend {
   return 'FLAT';
 }
 
+const STRATEGY_MODES: Array<{ id: string; label: string; desc: string }> = [
+  { id: 'MOMENTUM_ALPHA', label: 'Momentum Alpha', desc: 'Trend/momentum — multi-timeframe EMA/MACD confirmation' },
+  { id: 'MEAN_REVERSION', label: 'Mean Reversion X', desc: 'Statistical reversion — Bollinger extremes + RSI' },
+  { id: 'VOLATILITY_HARVEST', label: 'Volatility Harvest', desc: 'Vol-breakout — trades expanding ATR range breaks' },
+  { id: 'SENTIMENT_EDGE', label: 'Sentiment Edge', desc: 'Flow proxy — candle streaks confirmed by trend' },
+  { id: 'GRID_SCALPER', label: 'Grid Scalper', desc: 'Market-making — layered entries around the mean' },
+];
+
 const DEF_SCALP = {
   symbol: 'EURUSD',
   mode: 'BUY',
@@ -274,6 +282,7 @@ export default function App() {
   const [marketClosedHint, setMarketClosedHint] = useState<string>('');
   const [botEnabled, setBotEnabled] = useState(true);
   const [autonomousMode, setAutonomousMode] = useState(false);
+  const [strategyMode, setStrategyMode] = useState('MOMENTUM_ALPHA');
   const autonomousRef = useRef(false);
   const [lockToHighlighted, setLockToHighlighted] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
@@ -743,6 +752,7 @@ export default function App() {
           only_xau_session_filter: onlyXauSessionFilter,
           scoped_symbols_csv: effectiveScoped.join(','),
           autonomous_mode: true,
+          strategy_mode: strategyMode,
         });
       } catch {
         // transient failure; next tick retries
@@ -930,6 +940,7 @@ export default function App() {
       xau_session_utc: xauSessionUtc,
       only_xau_session_filter: onlyXauSessionFilter,
       scoped_symbols_csv: effectiveScoped.join(','),
+      strategy_mode: strategyMode,
     };
 
     setApplyBusy(true);
@@ -985,6 +996,7 @@ export default function App() {
       xau_session_utc: xauSessionUtc,
       only_xau_session_filter: onlyXauSessionFilter,
       scoped_symbols_csv: effectiveScoped.join(','),
+      strategy_mode: strategyMode,
     };
 
     try {
@@ -1039,6 +1051,7 @@ export default function App() {
           only_xau_session_filter: onlyXauSessionFilter,
           scoped_symbols_csv: effectiveScoped.join(','),
           autonomous_mode: true,
+          strategy_mode: strategyMode,
         });
         if (!botEnabled) {
           setBotEnabled(true);
@@ -1319,6 +1332,20 @@ export default function App() {
                 {lockToHighlighted ? `Locked to highlighted: ${selectedMarket?.symbol ?? scalp.symbol}` : 'Lock trading to highlighted market'}
               </button>
               <span className="text-[11px] text-slate-400">Highlighted market: {selectedMarket?.symbol ?? 'N/A'}</span>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/80 p-3">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">AI Strategy Mode (drives autonomous engine)</label>
+              <select
+                value={strategyMode}
+                onChange={(e) => setStrategyMode(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+              >
+                {STRATEGY_MODES.map((s) => (
+                  <option key={s.id} value={s.id}>{s.label} — {s.desc}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[10px] text-slate-500">Applied to the bridge engine on the next Apply / Autonomous tick.</p>
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">

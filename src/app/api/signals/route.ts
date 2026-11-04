@@ -34,6 +34,7 @@ type SignalPayload = {
   max_open_trades: number;
   scoped_symbols_csv: string;
   autonomous_mode?: boolean;
+  strategy_mode?: string;
   timestamp: string;
 };
 
@@ -628,6 +629,9 @@ export async function POST(request: NextRequest) {
           .join(',')
       : String((body as Record<string, unknown>).scoped_symbols_csv ?? 'EURUSD,GBPUSD,USDJPY,XAUUSD,BTCUSD,USDCAD,AUDUSD,US500,NAS100,USOIL'),
     autonomous_mode: toBoolean((body as Record<string, unknown>).autonomous_mode, false),
+    strategy_mode: typeof (body as Record<string, unknown>).strategy_mode === 'string'
+      ? String((body as Record<string, unknown>).strategy_mode)
+      : undefined,
     timestamp: new Date().toISOString(),
   };
 

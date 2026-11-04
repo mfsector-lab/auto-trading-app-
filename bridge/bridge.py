@@ -42,6 +42,7 @@ state: Dict[str, Any] = {
         "auto_order_lot": 0.01,
         "auto_scan_enabled": True,
         "autonomous_mode": False,
+        "strategy_mode": "MOMENTUM_ALPHA",
         "max_daily_loss": 250,
         "max_lot": 0.1,
         "no_trade_windows_utc": "",
@@ -347,7 +348,7 @@ def _is_precious_metal(symbol: str) -> bool:
     return "XAU" in s or "XAG" in s
 
 
-def _decide_from_market_scan(symbol: str, base_lot: float) -> Dict[str, Any]:
+def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = "MOMENTUM_ALPHA") -> Dict[str, Any]:
     h1_bars = _fetch_recent_ohlc(symbol, "1h", "5d")
     if len(h1_bars) < 20:
         return {"action": "HOLD", "reason": "insufficient_h1", "lot": base_lot, "timeframe": "h1"}
@@ -397,41 +398,86 @@ def _decide_from_market_scan(symbol: str, base_lot: float) -> Dict[str, Any]:
     lot_size = 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot)
     action = "HOLD"
     reason = "no_entry"
+    mode = (strategy_mode or "MOMENTUM_ALPHA").upper()
 
-    buy_cond = (
-        current_close > sma5
-        and rsi14 < 70
-        and h1_trend == "BULLISH"
-        and m5_trend == "BULLISH"
-        and current_macd > current_signal
-        and current_close < bb_upper
-    )
-    sell_cond = (
-        current_close < sma5
-        and rsi14 > 30
-        and h1_trend == "BEARISH"
-        and m5_trend == "BEARISH"
-        and current_macd < current_signal
-        and current_close > bb_lower
-    )
+    # ATR regime for volatility strategies
+    atr_ma = _sma([max(h - l, 1e-9) for h, l in zip(highs, lows)], 20) if len(highs) >= 20 else atr_values[-1] if atr_values else 0.0
+    atr_now = atr_values[-1] if atr_values else 0.0
+    vol_expanding = atr_ma > 0 and atr_now > 1.15 * atr_ma
 
-    if buy_cond:
-        action = "BUY"
-        reason = "mtf_buy_confirmed"
-        if rsi14 < 30:
-            lot_size = 0.04 if _is_precious_metal(symbol) else 0.20
-            reason = "mtf_buy_momentum"
-    elif sell_cond:
-        action = "SELL"
-        reason = "mtf_sell_confirmed"
-        if rsi14 > 70:
-            lot_size = 0.10 if _is_precious_metal(symbol) else 0.20
-            reason = "mtf_sell_momentum"
+    # candle streak for sentiment proxy
+    streak = 0
+    streak_dir = 0
+    for i in range(len(closes) - 1, 0, -1):
+        chg = closes[i] - closes[i - 1]
+        d = 1 if chg > 0 else (-1 if chg < 0 else 0)
+        if d == 0:
+            break
+        if streak_dir == 0:
+            streak_dir = d
+        if d != streak_dir:
+            break
+        streak += 1
+
+    if mode == "MEAN_REVERSION":
+        # Bollinger reversion: fade extremes, no trend filter
+        if current_close < bb_lower and rsi14 < 35:
+            action, reason = "BUY", "mr_band_reversion_buy"
+        elif current_close > bb_upper and rsi14 > 65:
+            action, reason = "SELL", "mr_band_reversion_sell"
+
+    elif mode == "VOLATILITY_HARVEST":
+        # Trade only when volatility expands and price breaks the 20-bar range
+        hi20 = max(highs[-21:-1]) if len(highs) > 21 else max(highs[:-1]) if len(highs) > 1 else 0
+        lo20 = min(lows[-21:-1]) if len(lows) > 21 else min(lows[:-1]) if len(lows) > 1 else 0
+        if vol_expanding and current_close > hi20:
+            action, reason = "BUY", "vol_breakout_high"
+        elif vol_expanding and current_close < lo20:
+            action, reason = "SELL", "vol_breakout_low"
+
+    elif mode == "SENTIMENT_EDGE":
+        # Streak proxy for news/flow sentiment, confirmed by h1 trend
+        if streak >= 4 and streak_dir == 1 and h1_trend == "BULLISH" and rsi14 < 75:
+            action, reason = "BUY", f"sentiment_streak_up_{streak}"
+        elif streak >= 4 and streak_dir == -1 and h1_trend == "BEARISH" and rsi14 > 25:
+            action, reason = "SELL", f"sentiment_streak_down_{streak}"
+
+    elif mode == "GRID_SCALPER":
+        # Layer around SMA20 mean: enter toward the mean, fixed small TP
+        grid_gap = max(bb_std * 0.5, atr_now * 0.25) if (bb_std or atr_now) else 0.0
+        if grid_gap > 0 and current_close < bb_middle - grid_gap:
+            action, reason = "BUY", "grid_buy_below_mean"
+        elif grid_gap > 0 and current_close > bb_middle + grid_gap:
+            action, reason = "SELL", "grid_sell_above_mean"
+        tp_pips = max(3, int(round(sl_pips * 0.6)))  # scalper: fast small TP
+
+    else:  # MOMENTUM_ALPHA — original multi-timeframe confirmation
+        buy_cond = (
+            current_close > sma5
+            and rsi14 < 70
+            and h1_trend == "BULLISH"
+            and m5_trend == "BULLISH"
+            and current_macd > current_signal
+            and current_close < bb_upper
+        )
+        sell_cond = (
+            current_close < sma5
+            and rsi14 > 30
+            and h1_trend == "BEARISH"
+            and m5_trend == "BEARISH"
+            and current_macd < current_signal
+            and current_close > bb_lower
+        )
+        if buy_cond:
+            action, reason = "BUY", "mtf_buy_confirmed"
+        elif sell_cond:
+            action, reason = "SELL", "mtf_sell_confirmed"
 
     score = abs(current_macd - current_signal) * 1000.0 + abs(rsi14 - 50.0) * 0.5
     candle_ts = datetime.fromtimestamp(timestamps[-1], tz=timezone.utc).isoformat()
     return {
         "action": action,
+        "strategy_mode": mode,
         "score": round(score, 5),
         "reason": reason,
         "timeframe": tf_interval,
@@ -451,7 +497,7 @@ def _decide_from_market_scan(symbol: str, base_lot: float) -> Dict[str, Any]:
 def _scan_symbol(symbol: str) -> Dict[str, Any]:
     try:
         default_lot = _safe_float(state["settings"].get("auto_order_lot", 0.01), 0.01)
-        scan = _decide_from_market_scan(symbol, default_lot)
+        scan = _decide_from_market_scan(symbol, default_lot, str(state["settings"].get("strategy_mode", "MOMENTUM_ALPHA")))
         return {
             "symbol": symbol.upper(),
             "action": str(scan.get("action", "HOLD")),
@@ -603,6 +649,8 @@ def apply_command(command: Dict[str, Any]) -> None:
         latest = state["latest_signal"].copy()
         latest.update(payload)
         action = str(latest.get("action", "")).upper().strip()
+        if payload.get("strategy_mode"):
+            state["settings"]["strategy_mode"] = str(payload["strategy_mode"]).upper()
         if payload.get("autonomous_mode"):
             state["settings"]["autonomous_mode"] = True
             state["settings"]["auto_scan_enabled"] = True

@@ -239,7 +239,7 @@ export default function App() {
   const [pinError, setPinError] = useState('');
   const [activePin, setActivePin] = useState('0000');
   const [activeAccountLabel, setActiveAccountLabel] = useState('Secure Session');
-  const [isUnlocked, setIsUnlocked] = useState(true);
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
   const [tab, setTab] = useState<'markets' | 'scalping' | 'connect'>('connect');
   const [mkt, setMkt] = useState<Market[]>(INITIAL_MARKETS);
@@ -323,12 +323,28 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const remembered = (localStorage.getItem(ACTIVE_PIN_KEY) || '').replace(/\D/g, '').slice(0, 4);
-    const sessionPin = remembered.length === 4 ? remembered : '0000';
-    localStorage.setItem(ACTIVE_PIN_KEY, sessionPin);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActivePin(sessionPin);
-    setActiveAccountLabel(getAccountLabel(sessionPin) || 'Secure Session');
-    setIsUnlocked(true);
+    if (remembered.length !== 4) return; // stay on login screen
+    (async () => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: remembered }),
+      });
+      if (!res.ok) return; // PIN no longer valid — show login
+      const d = await res.json();
+      localStorage.setItem(ACTIVE_PIN_KEY, remembered);
+      setActivePin(remembered);
+      setActiveAccountLabel(d.isOwner ? `${d.name} (Owner)` : d.name || 'Trader');
+      setIsUnlocked(true);
+    } catch {
+      // network hiccup — allow remembered pin through as offline session
+      localStorage.setItem(ACTIVE_PIN_KEY, remembered);
+      setActivePin(remembered);
+      setActiveAccountLabel(getAccountLabel(remembered) || 'Secure Session');
+      setIsUnlocked(true);
+    }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1155,26 +1171,38 @@ export default function App() {
     }
   };
 
- const unlockWithPin = () => {
+ const unlockWithPin = async () => {
     const pin = pinInput.trim().replace(/\D/g, '').slice(0, 4);
     if (pin.length !== 4) {
-      setPinError('Use any 4-digit access code to enter.');
+      setPinError('Enter your 4-digit PIN.');
       return;
     }
-
-    localStorage.setItem(ACTIVE_PIN_KEY, pin);
-    setActivePin(pin);
-    setActiveAccountLabel('Secure Session');
-    setPinInput('');
     setPinError('');
-    setIsUnlocked(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.ok) {
+        setPinError(d.error || 'PIN not recognised.');
+        return;
+      }
+      localStorage.setItem(ACTIVE_PIN_KEY, pin);
+      setActivePin(pin);
+      setActiveAccountLabel(d.isOwner ? `${d.name} (Owner)` : d.name || 'Trader');
+      setPinInput('');
+      setIsUnlocked(true);
+    } catch {
+      setPinError('Could not reach the login service.');
+    }
   };
 
   const lockSession = () => {
-    const sessionPin = '0000';
-    localStorage.setItem(ACTIVE_PIN_KEY, sessionPin);
-    setIsUnlocked(true);
-    setActivePin(sessionPin);
+    localStorage.removeItem(ACTIVE_PIN_KEY);
+    setIsUnlocked(false);
+    setActivePin('');
     setActiveAccountLabel('Secure Session');
     setPinInput('');
     setPinError('');
@@ -1186,7 +1214,7 @@ export default function App() {
         <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-violet-600">Dark Venus Security</p>
           <h1 className="mt-2 text-xl font-bold text-gray-900">Enter 4-digit PIN</h1>
-          <p className="mt-1 text-sm text-gray-500">Your history is saved by PIN on this device.</p>
+          <p className="mt-1 text-sm text-gray-500">Enter the PIN from your welcome email. No account? <a href="/join" className="font-semibold text-violet-600 underline">Request access with your email</a>.</p>
 
           <input
             value={pinInput}

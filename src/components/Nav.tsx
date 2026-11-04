@@ -15,6 +15,7 @@ const links = [
   { href: '/download', label: 'Download' },
   { href: '/settings', label: 'Settings' },
   { href: '/privacy', label: 'Privacy' },
+  { href: '/join', label: 'Join' },
 ];
 
 export default function Nav() {

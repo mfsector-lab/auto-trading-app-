@@ -817,6 +817,50 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mkt, autonomousMode, strategyMode]);
 
+
+  // One-panel unity: any RR/strategy change applies to the engine immediately
+  // (no waiting for the next 30s tick) whenever Autonomous Mode is active.
+  const rrAppliedRef = useRef('');
+  useEffect(() => {
+    if (!autonomousMode) return;
+    const stamp = `${rrRatio}|${strategyMode}`;
+    if (rrAppliedRef.current === stamp) return;
+    const t = setTimeout(() => {
+      const highlightedSymbol = selectedMarket?.symbol ?? scalp.symbol;
+      void pushSignalPayload({
+        mode: 'scalp',
+        action: 'AUTO_SCAN',
+        account_mode: accountMode,
+        symbol: highlightedSymbol,
+        lot: parseFloat(autoOrderLot),
+        tp_pips: parseInt(scalp.tp) || 12,
+        sl_pips: parseInt(scalp.sl) || 7,
+        max_spread: parseFloat(scalp.spread) || 2,
+        magic: parseInt(scalp.magic) || 54321,
+        comment: 'TradeAutomate_Autonomous',
+        bot_enabled: true,
+        scalp_mode: true,
+        spread_guard: scopeFeatures.spreadGuard,
+        ai_verify: scopeFeatures.aiVerify,
+        smart_trailing: scopeFeatures.smartTrailing,
+        news_filter: scopeFeatures.newsFilter,
+        candle_depth: Number(candleDepth) || 200,
+        concurrent_markets: concurrentMarkets,
+        max_open_trades: maxActiveTrades,
+        max_daily_loss: Number(maxDailyLoss) || 0,
+        no_trade_windows_utc: noTradeWindowsUtc,
+        allowed_symbols_csv: allowedSymbolsCsv,
+        xau_session_utc: xauSessionUtc,
+        only_xau_session_filter: onlyXauSessionFilter,
+        scoped_symbols_csv: scopedSymbols.join(','),
+        strategy_mode: strategyMode,
+        rr_ratio: Number(rrRatio) || 2.0,
+      }).then(() => { rrAppliedRef.current = stamp; }).catch(() => {});
+    }, 800); // debounce rapid preset clicks
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rrRatio, strategyMode, autonomousMode]);
+
   const filteredMarkets = useMemo(() => {
     if (activeSignal === 'ALL') return mkt;
     return mkt.filter((m) => m.signal === activeSignal);
@@ -1371,7 +1415,7 @@ export default function App() {
             </div>
             <p className="mt-2 text-xs text-slate-400">Tune market concurrency, candle depth, and feature toggles for your live flow.</p>
 
-            <div className="mt-4 rounded-2xl border-2 border-dashed p-4 {autonomousMode ? 'border-amber-400 bg-amber-500/5' : 'border-slate-700 bg-slate-950/40'}">
+            <div className={`mt-4 rounded-2xl border-2 border-dashed p-4 ${autonomousMode ? 'border-amber-400 bg-amber-500/5' : 'border-slate-700 bg-slate-950/40'}`}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-white">⚡ Autonomous Mode</p>
@@ -1385,12 +1429,15 @@ export default function App() {
                 </button>
               </div>
               {autonomousMode && (
-                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] md:grid-cols-4">
+                <>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] md:grid-cols-5">
                   <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">Scanning <span className="font-semibold">{scopedSymbols.length} markets</span></div>
                   <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">Lot <span className="font-semibold">{autoOrderLot}</span></div>
                   <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">Max trades <span className="font-semibold">{maxActiveTrades}</span></div>
-                  <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">Risk/Reward <span className="font-semibold">1:1.7</span></div>
+                  <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">Risk/Reward <span className="font-semibold">1:{rrRatio}</span></div>
                 </div>
+                <p className="mt-2 text-[10px] text-amber-200">SL floor 500 pts. TP = SL x ratio. Trailing from 550 pts. Changes apply instantly.</p>
+                </>
               )}
             </div>
 

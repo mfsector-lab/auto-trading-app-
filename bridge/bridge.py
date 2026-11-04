@@ -210,16 +210,40 @@ def _ticker_for_symbol(symbol: str) -> str:
     return mapping.get(s, s)
 
 
+_OHLC_CACHE: Dict[str, Tuple[float, List[Tuple[int, float, float, float]]]] = {}
+_OHLC_TTL_SECONDS = 45.0
+_YAHOO_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
+
+
 def _fetch_recent_ohlc(symbol: str, interval: str, range_value: str) -> List[Tuple[int, float, float, float]]:
     ticker = _ticker_for_symbol(symbol)
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    cache_key = f"{ticker}|{interval}|{range_value}"
+    now = time.time()
+    cached = _OHLC_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _OHLC_TTL_SECONDS:
+        return cached[1]
+
     params = {
         "interval": interval,
         "range": range_value,
     }
-    r = requests.get(url, params=params, timeout=8)
-    r.raise_for_status()
-    data = r.json()
+    data = None
+    last_err = None
+    for host in _YAHOO_HOSTS:
+        try:
+            r = requests.get(
+                f"https://{host}/v8/finance/chart/{ticker}",
+                params=params, timeout=8,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            )
+            r.raise_for_status()
+            data = r.json()
+            break
+        except Exception as exc:
+            last_err = exc
+            continue
+    if data is None:
+        raise RuntimeError(f"yahoo fetch failed: {last_err}")
 
     result = ((data.get("chart") or {}).get("result") or [{}])[0] or {}
     timestamps = result.get("timestamp") or []
@@ -237,7 +261,8 @@ def _fetch_recent_ohlc(symbol: str, interval: str, range_value: str) -> List[Tup
         l = lows[i]
         if isinstance(ts, (int, float)) and isinstance(c, (int, float)) and isinstance(h, (int, float)) and isinstance(l, (int, float)):
             bars.append((int(ts), float(h), float(l), float(c)))
-    return bars[-600:]
+    _OHLC_CACHE[cache_key] = (now, bars)
+    return bars
 
 
 def _ema_series(values: List[float], period: int) -> List[float]:

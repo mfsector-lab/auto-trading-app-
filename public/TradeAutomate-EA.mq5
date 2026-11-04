@@ -7,10 +7,10 @@
 
 #include <Trade\Trade.mqh>
 
-input string AppURL      = "https://tradeautomate-ai.vercel.app/api/signals";
-input string EventURL    = "https://tradeautomate-ai.vercel.app/api/signals";
-input string BackupAppURL = "https://tradeautomate-ai.vercel.app/api/signals";
-input string BackupEventURL = "https://tradeautomate-ai.vercel.app/api/signals";
+input string AppURL      = "http://127.0.0.1:5001/signal";          // local bridge (brain)
+input string EventURL    = "http://127.0.0.1:5001/event";          // local bridge
+input string BackupAppURL = "https://tradeautomate-ai.vercel.app/api/signals"; // cloud fallback
+input string BackupEventURL = "https://tradeautomate-ai.vercel.app/api/signals"; // cloud fallback
 input string ClientId    = "0000";
 input string AuthToken   = "YOUR_AUTH_TOKEN";
 input int    PollSeconds = 1;

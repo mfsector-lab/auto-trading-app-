@@ -15,6 +15,8 @@ interface EngineStatus {
   lastTrade: string;
   lastReject: string;
   lastSignal: { action: string; symbol: string; reason: string; timestamp: string } | null;
+  aiStats: { totalTrades: number; wins: number; losses: number; winRate: number; totalPnl: number; recentResults: Array<{ action: string; symbol: string; profit: number; outcome: string; timestamp: string }> } | null;
+  activeStrategy: string;
 }
 
 const TABS = [
@@ -90,6 +92,8 @@ export default function SygnalApp() {
         lastTrade: e && e.ticket ? `${e.action} ${e.symbol} @ ${e.price}` : 'None yet',
         lastReject: d.rejection ? `${d.rejection.reason}: ${d.rejection.detail}` : 'None',
         lastSignal: q && q.timestamp ? { action: q.action, symbol: q.symbol, reason: q.scan_reason ?? '', timestamp: q.timestamp } : null,
+        aiStats: d.ai_stats ?? null,
+        activeStrategy: String(q.strategy_mode ?? '—'),
       });
     } catch { /* offline */ }
   }, []);
@@ -139,17 +143,29 @@ export default function SygnalApp() {
           <>
             <SygnalControl />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card title="AI Trading Bots">
+              <Card title="AI Trading Bots (live from your engine)">
+                <p className="mb-2 text-[10px] text-slate-500">
+                  Active mode: <span className="font-bold text-violet-300">{st?.activeStrategy ?? '—'}</span> — select a card below and Generate to switch the engine instantly.
+                </p>
                 <div className="space-y-2">
-                  {BOTS.map((b) => (
-                    <button key={b.id} onClick={() => setTab('strategies')} className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-left hover:border-violet-500/50">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-bold text-slate-100">{b.name}</p>
-                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">engine live</span>
-                      </div>
-                      <p className="mt-0.5 text-[10px] text-slate-500">{b.style}</p>
-                    </button>
-                  ))}
+                  {BOTS.map((b) => {
+                    const active = (st?.activeStrategy ?? '') === b.id;
+                    const wins = st?.aiStats?.wins ?? 0;
+                    const total = st?.aiStats?.totalTrades ?? 0;
+                    const wr = total > 0 ? Math.round((wins / total) * 100) : null;
+                    return (
+                      <button key={b.id} onClick={() => setTab('strategies')} className={`w-full rounded-xl border p-3 text-left transition-all ${active ? 'border-violet-400 bg-violet-500/10' : 'border-slate-700 bg-slate-950 hover:border-violet-500/50'}`}>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-slate-100">{b.name}</p>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? 'bg-violet-500/20 text-violet-200' : 'bg-slate-700/60 text-slate-300'}`}>{active ? 'DRIVING ENGINE' : 'ready'}</span>
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{b.style}</p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          Real results: {total} closed trades · {wr !== null ? `${wr}% win rate` : 'no closed trades yet'} · P&L ${st?.aiStats?.totalPnl?.toFixed(2) ?? '0.00'}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               </Card>
               <Card title="Live Terminal Activity">
@@ -164,6 +180,21 @@ export default function SygnalApp() {
                   </div>
                 ) : (
                   <p className="text-xs text-slate-500">No open positions from the engine right now. Generate a signal above to trade.</p>
+                )}
+                {st?.aiStats?.recentResults && st.aiStats.recentResults.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[10px] uppercase tracking-widest text-slate-500">Closed trades (real, from your EA)</p>
+                    <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+                      {st.aiStats.recentResults.slice(0, 10).map((t, i) => (
+                        <div key={i} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+                          <span className={t.outcome === 'WIN' ? 'font-semibold text-emerald-300' : 'font-semibold text-rose-300'}>
+                            {t.action} · {t.symbol} · {t.outcome}
+                          </span>
+                          <span className="text-slate-400">${(t.profit ?? 0).toFixed(2)} · {new Date(t.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 <div className="mt-3 space-y-1 text-[11px] text-slate-400">
                   <p>Last trade: <span className="text-slate-200">{st?.lastTrade ?? '—'}</span></p>

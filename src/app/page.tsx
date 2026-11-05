@@ -492,6 +492,19 @@ export default function App() {
     localStorage.setItem(historyKey(activePin), JSON.stringify(snapshot));
   }, [isUnlocked, activePin, log, tradeHistory, errorLogs, lastSignalSent, lastTradeExecuted, lastRejectReason]);
 
+  // Gold moves bigger: widen scalp TP/SL defaults whenever XAUUSD is the working symbol
+  useEffect(() => {
+    const sym = (lockToHighlighted ? selectedMarket?.symbol : scalp.symbol) ?? '';
+    if (sym.startsWith('XAU')) {
+      setScalp((prev) => ({
+        ...prev,
+        tp: String(Math.max(parseInt(prev.tp) || 0, 600)),
+        sl: String(Math.max(parseInt(prev.sl) || 0, 300)),
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scalp.symbol, selectedMarket?.symbol, lockToHighlighted]);
+
   useEffect(() => {
     if (scopedSymbols.length === 0) return;
     if (!scopedSymbols.includes(scalp.symbol)) {

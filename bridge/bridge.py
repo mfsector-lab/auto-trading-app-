@@ -45,6 +45,7 @@ state: Dict[str, Any] = {
         "strategy_mode": "DASHBOARD_SIGNALS",
         "rr_ratio": 2.0,
         "min_sl_pips": 50.0,
+        "autonomous_mode": True,
         "max_daily_loss": 250,
         "max_lot": 0.1,
         "no_trade_windows_utc": "",
@@ -671,6 +672,8 @@ def apply_command(command: Dict[str, Any]) -> None:
         action = str(latest.get("action", "")).upper().strip()
         if payload.get("strategy_mode"):
             state["settings"]["strategy_mode"] = str(payload["strategy_mode"]).upper()
+        if payload.get("autonomous_mode") is not None:
+            _save_persisted_flag(bool(payload["autonomous_mode"]))
         if payload.get("autonomous_mode"):
             state["settings"]["autonomous_mode"] = True
             state["settings"]["auto_scan_enabled"] = True
@@ -737,6 +740,41 @@ def post_ack(command_id: str, status: str, note: str) -> None:
     requests.post(API_BRIDGE_URL, json=payload, timeout=8)
 
 
+def _scan_and_emit(settings: Dict[str, Any], strategy_mode: str) -> None:
+    scoped_csv = str(settings.get("scoped_symbols_csv", "EURUSD"))
+    scoped = [x.strip().upper() for x in scoped_csv.split(",") if x.strip()][:6]
+    base_lot = _safe_float(settings.get("auto_order_lot", 0.01), 0.01)
+    best = None
+    for sym in scoped:
+        scan = _scan_symbol(sym)
+        if scan.get("action") in ("BUY", "SELL"):
+            if best is None or abs(float(scan.get("score", 0))) > abs(float(best.get("score", 0))):
+                best = scan
+    emit = best or (_scan_symbol(scoped[0]) if scoped else None)
+    if not emit:
+        return
+    with state_lock:
+        latest = state["latest_signal"].copy()
+        latest.update({
+            "action": emit.get("action", "HOLD"),
+            "symbol": emit.get("symbol", scoped[0]),
+            "lot": _safe_float(emit.get("lot"), base_lot),
+            "sl_pips": int(emit.get("sl_pips", 50)),
+            "tp_pips": int(emit.get("tp_pips", 100)),
+            "comment": f"Auto_{strategy_mode[:12]}",
+            "scan_reason": emit.get("reason", ""),
+            "scan_score": emit.get("score", 0.0),
+            "timestamp": now_iso(),
+        })
+        if latest["action"] in ("BUY", "SELL"):
+            block = _risk_gate(latest)
+            if block:
+                latest["action"] = "HOLD"
+                latest["bridge_block_reason"] = block
+                state["risk"]["last_block_reason"] = block
+        state["latest_signal"] = latest
+
+
 def autonomous_engine() -> None:
     """Bridge-side autonomous loop: every 10s, if autonomous_mode is on, run the
     scan engine and set latest_signal directly. Does NOT depend on the browser
@@ -779,41 +817,16 @@ def autonomous_engine() -> None:
                             state["latest_signal"] = latest
                 except Exception:
                     pass
+                # No fresh dashboard card? Fall back to the engine scan so
+                # the bot NEVER goes silent just because the browser is closed.
+                mode_fallback = "MOMENTUM_ALPHA"
+                settings2 = settings
+                mode = None  # placeholder to keep structure clear
+                _scan_and_emit(settings2, mode_fallback)
                 continue
 
             # engine modes: scan scoped markets and emit signals
-            scoped_csv = str(settings.get("scoped_symbols_csv", "EURUSD"))
-            scoped = [x.strip().upper() for x in scoped_csv.split(",") if x.strip()][:6]
-            base_lot = _safe_float(settings.get("auto_order_lot", 0.01), 0.01)
-            best = None
-            for sym in scoped:
-                scan = _scan_symbol(sym)
-                if scan.get("action") in ("BUY", "SELL"):
-                    if best is None or abs(float(scan.get("score", 0))) > abs(float(best.get("score", 0))):
-                        best = scan
-            emit = best or (_scan_symbol(scoped[0]) if scoped else None)
-            if not emit:
-                continue
-            with state_lock:
-                latest = state["latest_signal"].copy()
-                latest.update({
-                    "action": emit.get("action", "HOLD"),
-                    "symbol": emit.get("symbol", scoped[0]),
-                    "lot": _safe_float(emit.get("lot"), base_lot),
-                    "sl_pips": int(emit.get("sl_pips", 50)),
-                    "tp_pips": int(emit.get("tp_pips", 100)),
-                    "comment": f"Auto_{mode[:12]}",
-                    "scan_reason": emit.get("reason", ""),
-                    "scan_score": emit.get("score", 0.0),
-                    "timestamp": now_iso(),
-                })
-                if latest["action"] in ("BUY", "SELL"):
-                    block = _risk_gate(latest)
-                    if block:
-                        latest["action"] = "HOLD"
-                        latest["bridge_block_reason"] = block
-                        state["risk"]["last_block_reason"] = block
-                state["latest_signal"] = latest
+            _scan_and_emit(settings, mode)
         except Exception:
             continue
 
@@ -1004,7 +1017,26 @@ def event_forward():
     return jsonify({"ok": len(errors) == 0, "signals": mt4_result, "bridge": bridge_result, "errors": errors}), status_code
 
 
+def _load_persisted_flags() -> None:
+    """Survive redeploys: the dashboard may be wiped, but the bridge remembers."""
+    try:
+        flag = os.path.join(os.path.dirname(os.path.abspath(__file__)), "autonomy.flag")
+        if os.path.exists(flag):
+            with open(flag) as f:
+                state["settings"]["autonomous_mode"] = f.read().strip() == "1"
+    except Exception:
+        pass
+
+def _save_persisted_flag(on: bool) -> None:
+    try:
+        flag = os.path.join(os.path.dirname(os.path.abspath(__file__)), "autonomy.flag")
+        with open(flag, "w") as f:
+            f.write("1" if on else "0")
+    except Exception:
+        pass
+
 if __name__ == "__main__":
+    _load_persisted_flags()
     _force_auto_scan("bridge_startup")
     t = threading.Thread(target=poll_loop, daemon=True)
     t.start()

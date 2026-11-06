@@ -1,5 +1,1 @@
-{
-  "env": {
-    "DATABASE_URL": "postgres://7b56ffc4a52154ee9e7bb1b1f1c504f66b651fccd117fa9615836eb9d570131d:sk_qGnKsBksPNWu9J-Xc-k9F@pooled.db.prisma.io:5432/postgres?sslmode=require"
-  }
-}
+{}

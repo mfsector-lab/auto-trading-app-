@@ -321,12 +321,8 @@ void CloseAllManagedPositions() {
       string sym = PositionGetString(POSITION_SYMBOL);
       MqlTick tick;
       if (!SymbolInfoTick(sym, tick)) continue;
-      long ptype = PositionGetInteger(POSITION_TYPE);
-      double vol = PositionGetDouble(POSITION_VOLUME);
-      trade.SetDeviationInPoints(50);
-      bool ok = (ptype == POSITION_TYPE_BUY)
-         ? trade.PositionClose(ticket)
-         : trade.PositionClose(ticket);
+      Trade.SetDeviationInPoints(50);
+      bool ok = Trade.PositionClose(ticket);
       PrintFormat("[TradeAutomate-MT5] close_all ticket=%I64u result=%s", ticket, ok ? "OK" : "FAIL");
    }
 }

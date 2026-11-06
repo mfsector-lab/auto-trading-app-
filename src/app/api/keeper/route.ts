@@ -22,9 +22,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, alive: false, db: dbConfigured() });
   const k = g.__cloudKeeper;
-  if (!k) return NextResponse.json({ ok: true, alive: false });
-  const alive = Date.now() - Date.parse(k.last) < 90_000;
-  return NextResponse.json({ ok: true, alive, ...k });
+  const alive = Boolean(k) && Date.now() - Date.parse((k as { last: string }).last) < 90_000;
+  return NextResponse.json({ ok: true, alive, db: dbConfigured(), ...(k ?? {}) });
 }

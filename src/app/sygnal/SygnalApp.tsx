@@ -155,14 +155,20 @@ export default function SygnalApp() {
     } catch { setApplied('apply failed'); }
   }, [st?.activeStrategy, rrRatio]);
 
+  const [fetchErr, setFetchErr] = useState('');
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/signals?status=1&client_id=0000', { cache: 'no-store' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setFetchErr(`status API ${res.status}`);
+        return;
+      }
       const d = await res.json();
+      setFetchErr('');
       const t = d.terminal ?? {};
       const trades: EngineStatus['openTrades'] = Array.isArray(d.open_trades) ? d.open_trades : [];
-      const online = Boolean(t.last_seen) && Date.now() - Date.parse(t.last_seen) < 30_000;
+      const seenMs = t.last_seen ? Date.parse(t.last_seen) : NaN;
+      const online = !Number.isNaN(seenMs) && Date.now() - seenMs < 45_000;
       const e = d.execution ?? null;
       const q = d.queued_signal ?? null;
       setSt({
@@ -206,7 +212,7 @@ export default function SygnalApp() {
             <h1 className="text-xl font-bold">Autonomous Trading Console</h1>
             <p className="mt-1 text-xs text-slate-300">
               Terminal: <span className={st?.terminalOnline ? 'font-bold text-emerald-400' : 'font-bold text-rose-400'}>{st?.terminalOnline ? 'ONLINE' : 'OFFLINE'}</span>
-              {' · '}{st?.account ?? '—'} · {st?.broker ?? '—'} · EA {st?.eaVersion ?? '—'}
+              {' · '}{st?.account ?? '—'} · {st?.broker ?? '—'} · EA {st?.eaVersion ?? '—'}{fetchErr && <span className="ml-2 text-rose-300">(status: {fetchErr})</span>}
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2">

@@ -1,0 +1,16 @@
+name: Cloud Bridge Keeper
+
+on:
+  schedule:
+    - cron: '* * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping keeper
+        run: |
+          curl -sS -X POST https://tradeautomate-ai.vercel.app/api/keeper \
+            -H 'Content-Type: application/json' \
+            -d '{"source":"github-actions","note":"cloud bridge alive"}' || true

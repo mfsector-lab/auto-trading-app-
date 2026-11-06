@@ -74,6 +74,9 @@ interface TerminalStatus {
   ea_version?: string;
   open_count?: number;
   open_profit?: number;
+  bid?: number;
+  ask?: number;
+  candles?: Array<[number, number, number, number]>;
 }
 
 interface ExecutionStatus {
@@ -623,6 +626,14 @@ export default function App() {
     },
   ];
 
+  const [realCandles, setRealCandles] = useState<Array<{o:number;h:number;l:number;c:number}> | null>(null);
+  const lastErrRef = useRef<string>('');
+  const pushErr = useCallback((line: string) => {
+    if (lastErrRef.current === line) return; // kill repeats of the same message
+    lastErrRef.current = line;
+    setErrorLogs((prev) => [line, ...prev].slice(0, 30));
+  }, []);
+
   const fetchMt4Status = useCallback(async () => {
     try {
       const res = await fetch(`/api/signals?status=1&client_id=${encodeURIComponent(clientId)}`, {
@@ -638,6 +649,9 @@ export default function App() {
       };
 
       const terminal = data.terminal;
+      if (terminal?.candles && terminal.candles.length > 5) {
+        setRealCandles(terminal.candles.map((x) => ({ o: x[0], h: x[1], l: x[2], c: x[3] })));
+      }
       if (terminal) {
         const seenMs = Date.parse(terminal.last_seen);
         const ageMs = Number.isNaN(seenMs) ? Number.POSITIVE_INFINITY : Date.now() - seenMs;
@@ -826,7 +840,7 @@ export default function App() {
         strategy_mode: 'DASHBOARD_SIGNALS',
         rr_ratio: Number(rrRatio) || 2.0,
       }).catch(() => { lastAutoSent.current.delete(m.symbol); });
-      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Auto: ${m.signal} ${m.symbol} (dashboard card signal)`, ...prev].slice(0, 30));
+      pushErr(`[${new Date().toLocaleTimeString()}] Auto: ${m.signal} ${m.symbol} (dashboard card signal)`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mkt, autonomousMode, strategyMode]);
@@ -1011,7 +1025,7 @@ export default function App() {
     setTradeHistory((prev) => [tradeLine, ...prev].slice(0, 40));
     setLastSignalSent(`${accountMode} ${scalp.mode} ${effectiveSymbol} (${orderType})`);
     setOpenProfitPanel(false);
-    setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Trade command sent. Your EA will pull it directly from the app.`, ...prev].slice(0, 30));
+    pushErr(`[${new Date().toLocaleTimeString()}] Trade command sent. Your EA will pull it directly from the app.`);
     setTimeout(() => {
       fetchMt4Status();
     }, 1500);
@@ -1066,7 +1080,7 @@ export default function App() {
         ...prev,
       ].slice(0, 20));
       setLastSignalSent(`SCOPING APPLY ${lockToHighlighted ? highlightedSymbol : 'MULTI'}`);
-      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Scoping applied. EA will use these settings on next pull.`, ...prev].slice(0, 30));
+      pushErr(`[${new Date().toLocaleTimeString()}] Scoping applied. EA will use these settings on next pull.`);
       setTimeout(() => {
         fetchMt4Status();
       }, 1000);
@@ -1117,7 +1131,7 @@ export default function App() {
     try {
       await pushSignalPayload(payload);
       setBotEnabled(next);
-      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Bot switched ${next ? 'ON' : 'OFF'}. EA will sync this state directly from the app.`, ...prev].slice(0, 30));
+      pushErr(`[${new Date().toLocaleTimeString()}] Bot switched ${next ? 'ON' : 'OFF'}.`);
       setTimeout(() => {
         fetchMt4Status();
       }, 1000);
@@ -1422,7 +1436,7 @@ export default function App() {
           </div>
         </div>
 
-        <GlassCandles symbol={selectedMarket?.symbol ?? scalp.symbol} />
+        <GlassCandles symbol={selectedMarket?.symbol ?? scalp.symbol} realCandles={realCandles ?? undefined} liveLabel={mt4BrokerLabel} />
 
         <div className="glass p-4">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unified Execution Terminal</p>

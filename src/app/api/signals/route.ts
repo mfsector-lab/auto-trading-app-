@@ -39,6 +39,8 @@ type SignalPayload = {
   timestamp: string;
 };
 
+type Candle = [number, number, number, number];
+
 type TerminalStatus = {
   account_mode: 'DEMO' | 'LIVE' | 'UNKNOWN';
   broker: string;
@@ -50,6 +52,9 @@ type TerminalStatus = {
   ea_version?: string;
   open_count?: number;
   open_profit?: number;
+  bid?: number;
+  ask?: number;
+  candles?: Candle[];
 };
 
 type ExecutionStatus = {
@@ -481,6 +486,14 @@ export async function POST(request: NextRequest) {
       last_seen: new Date().toISOString(),
       source: 'heartbeat',
       ea_version: String((body as Record<string, unknown>).ea_version ?? 'unknown'),
+      bid: toNumber((body as Record<string, unknown>).bid, 0),
+      ask: toNumber((body as Record<string, unknown>).ask, 0),
+      candles: Array.isArray((body as Record<string, unknown>).candles)
+        ? ((body as Record<string, unknown>).candles as unknown[]).slice(0, 40).map((row) => {
+            const arr = Array.isArray(row) ? row : [];
+            return [Number(arr[0]) || 0, Number(arr[1]) || 0, Number(arr[2]) || 0, Number(arr[3]) || 0] as Candle;
+          })
+        : [],
       open_count: Math.max(0, Math.trunc(toNumber((body as Record<string, unknown>).open_count, 0))),
       open_profit: toNumber((body as Record<string, unknown>).open_profit, 0),
     };

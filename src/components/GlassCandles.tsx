@@ -3,7 +3,10 @@
 import { useEffect, useRef } from 'react';
 
 /** Interactive glass candlestick viewport: live-simulated candles, hover crosshair. */
-export default function GlassCandles({ symbol = 'XAUUSD' }: { symbol?: string }) {
+interface CandleData { o: number; h: number; l: number; c: number }
+
+export default function GlassCandles({ symbol = 'XAUUSD', realCandles, liveLabel }: { symbol?: string; realCandles?: CandleData[]; liveLabel?: string }) {
+  const useReal = Array.isArray(realCandles) && realCandles.length > 5;
   const ref = useRef<HTMLCanvasElement | null>(null);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -13,11 +16,14 @@ export default function GlassCandles({ symbol = 'XAUUSD' }: { symbol?: string })
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let candles: Array<{ o: number; h: number; l: number; c: number }> = [];
+    let candles: CandleData[] = useReal
+      ? realCandles!.map((x) => ({ o: x.o, h: x.h, l: x.l, c: x.c }))
+      : [];
     let price = symbol.startsWith('XAU') ? 2315 : symbol.startsWith('BTC') ? 67600 : 1.08;
     const drift = symbol.startsWith('BTC') ? 40 : symbol.startsWith('XAU') ? 1.2 : 0.0006;
 
     const gen = () => {
+      if (useReal) return;
       candles = [];
       for (let i = 0; i < 60; i++) {
         const o = price;
@@ -103,7 +109,7 @@ export default function GlassCandles({ symbol = 'XAUUSD' }: { symbol?: string })
       });
       if (candles.length > 60) candles.shift();
       draw();
-    }, 2500);
+    }, useReal ? 15000 : 2500);
 
     const onMove = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect();
@@ -115,7 +121,7 @@ export default function GlassCandles({ symbol = 'XAUUSD' }: { symbol?: string })
       clearInterval(anim);
       canvas.removeEventListener('mousemove', onMove);
     };
-  }, [symbol]);
+  }, [symbol, realCandles]);
 
   return (
     <div className="glass relative overflow-hidden p-4">
@@ -124,10 +130,10 @@ export default function GlassCandles({ symbol = 'XAUUSD' }: { symbol?: string })
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Real-time performance viewport</p>
           <p className="mt-0.5 text-sm font-bold text-white">{symbol} <span className="text-slate-500">· 5m candles</span></p>
         </div>
-        <span className="rounded-full glass-violet px-2.5 py-1 text-[10px] font-bold text-violet-200">LIVE</span>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${useReal ? 'glass-emerald text-emerald-200' : 'glass-violet text-violet-200'}`}>{useReal ? 'REAL — from your terminal' : 'SIMULATED'}</span>
       </div>
       <canvas ref={ref} className="mt-3 w-full rounded-xl" style={{ height: 240 }} />
-      <p className="mt-2 text-[10px] text-slate-500">Market feed simulation for visualisation — execution prices come from your broker via the bridge.</p>
+      <p className="mt-2 text-[10px] text-slate-500">{useReal ? `Real M5 candles from your MT5 terminal (${liveLabel ?? 'heartbeat feed'})` : 'Waiting for terminal candles — showing simulation until the EA heartbeats through the bridge.'}</p>
     </div>
   );
 }

@@ -208,8 +208,24 @@ void SendHeartbeat(string sym) {
   int openCount = CountOpenAllTrades();
   double openProfit = OpenProfitAllTrades();
 
+  // live market snapshot: last 40 M5 closes so the site chart shows REAL data
+  string closesJson = "";
+  {
+    MqlRates rates[];
+    int n = CopyRates(sym, PERIOD_M5, 0, 40, rates);
+    if (n > 0) {
+      for (int i = n - 1; i >= 0; i--) {
+        if (closesJson != "") closesJson += ",";
+        closesJson += StringFormat("[%.5f,%.5f,%.5f,%.5f]", rates[i].open, rates[i].high, rates[i].low, rates[i].close);
+      }
+    }
+  }
+  MqlTick tick;
+  double bid = 0, ask = 0;
+  if (SymbolInfoTick(sym, tick)) { bid = tick.bid; ask = tick.ask; }
+
   string payload = StringFormat(
-    "{\"client_id\":\"%s\",\"event_type\":\"heartbeat\",\"account_mode\":\"%s\",\"broker\":\"%s\",\"server\":\"%s\",\"account_number\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"v1.20-mt5\",\"open_count\":%d,\"open_profit\":%G}",
+    "{\"client_id\":\"%s\",\"event_type\":\"heartbeat\",\"account_mode\":\"%s\",\"broker\":\"%s\",\"server\":\"%s\",\"account_number\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"v1.20-mt5\",\"open_count\":%d,\"open_profit\":%G,\"bid\":%G,\"ask\":%G,\"candles\":[%s]}",
     JsonEscape(ClientId),
     accountMode,
     JsonEscape(AccountInfoString(ACCOUNT_COMPANY)),
@@ -217,7 +233,10 @@ void SendHeartbeat(string sym) {
     (long)AccountInfoInteger(ACCOUNT_LOGIN),
     JsonEscape(sym),
     openCount,
-    openProfit
+    openProfit,
+    bid,
+    ask,
+    closesJson
   );
   PostEvent(payload, "heartbeat");
 }

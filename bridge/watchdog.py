@@ -37,11 +37,27 @@ def write_status(state, pid, restarts, last_exit):
         pass
 
 
+
+import socket
+
+def bridge_alive():
+    """If something is already serving on 5001, another supervisor may own it."""
+    try:
+        s = socket.create_connection(("127.0.0.1", int(os.environ.get("BRIDGE_PORT", "5001"))), timeout=2)
+        s.close()
+        return True
+    except Exception:
+        return False
+
 def main():
     python = next((p for p in CANDIDATES if os.path.exists(p)), sys.executable)
     restarts = 0
     last_exit = None
     print(f"[watchdog] starting bridge supervisor (python={python})")
+    if bridge_alive():
+        print("[watchdog] bridge already alive on 5001 - exiting (Task Scheduler will re-check)")
+        write_status("already-running", None, restarts, last_exit)
+        return
     while True:
         proc = subprocess.Popen(
             [python, BRIDGE],

@@ -118,6 +118,7 @@ export type AiLearningStats = {
 
 type ClientSignalState = {
   lastSignalByMode: Map<string, SignalPayload>;
+  lastCardSignal: SignalPayload | null;
   lastGlobalSignal: SignalPayload | null;
   lastTerminalStatus: TerminalStatus | null;
   lastExecutionStatus: ExecutionStatus | null;
@@ -134,7 +135,8 @@ function getClientSignalState(clientId: string): ClientSignalState {
   if (state) return state;
   state = {
     lastSignalByMode: new Map<string, SignalPayload>(),
-    lastGlobalSignal: null,
+    lastCardSignal: null,
+  lastGlobalSignal: null,
     lastTerminalStatus: null,
     lastExecutionStatus: null,
     lastRejectionStatus: null,
@@ -403,6 +405,7 @@ export async function GET(request: NextRequest) {
         rejection: state.lastRejectionStatus,
         open_trades: state.lastOpenTradesStatus,
         queued_signal: state.lastGlobalSignal,
+      card_signal: state.lastCardSignal,
         ai_stats: state.aiStats,
       },
       {
@@ -659,6 +662,9 @@ export async function POST(request: NextRequest) {
     timestamp: new Date().toISOString(),
   };
 
+  if (payload.action === 'BUY' || payload.action === 'SELL') {
+    state.lastCardSignal = payload;
+  }
   state.lastSignalByMode.set(mode, payload);
   state.lastGlobalSignal = payload;
 

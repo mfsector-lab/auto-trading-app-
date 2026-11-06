@@ -865,7 +865,7 @@ def poll_loop() -> None:
                     )
                     sr.raise_for_status()
                     sd = sr.json()
-                    q = sd.get("queued_signal") or {}
+                    q = sd.get("card_signal") or sd.get("queued_signal") or {}
                     sm = q.get("strategy_mode")
                     if sm:
                         state["settings"]["strategy_mode"] = str(sm).upper()
@@ -875,6 +875,26 @@ def poll_loop() -> None:
                             state["settings"]["rr_ratio"] = max(1.0, min(10.0, float(rr)))
                         except Exception:
                             pass
+
+                    # SELF-IMPROVING LOOP: learn from the EA's closed-trade results.
+                    ai = sd.get("ai_stats") or {}
+                    recent = ai.get("recentResults") or []
+                    if recent:
+                        last_ts = str(recent[0].get("timestamp", ""))
+                        if last_ts and last_ts != state.get("_last_tuned_ts"):
+                            state["_last_tuned_ts"] = last_ts
+                            recent10 = recent[:10]
+                            if len(recent10) >= 4:
+                                wins = sum(1 for x in recent10 if x.get("outcome") == "WIN")
+                                wr = wins / len(recent10)
+                                rr_now = float(state["settings"].get("rr_ratio", 2.0))
+                                if wr < 0.40:
+                                    new_rr = min(4.0, rr_now + 0.3)
+                                    state["settings"]["rr_ratio"] = new_rr
+                                    state["risk"]["last_block_reason"] = f"self-tune: wr {wr:.0%} -> RR {new_rr:.1f}"
+                                elif wr > 0.65:
+                                    new_rr = max(1.2, rr_now - 0.2)
+                                    state["settings"]["rr_ratio"] = new_rr
 
                     # DASHBOARD_SIGNALS mode: the dashboard's own market cards are
                     # the primary signal source. Pass explicit BUY/SELL through

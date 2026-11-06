@@ -99,6 +99,12 @@ interface RejectionStatus {
 
 interface QueuedSignalStatus {
   bot_enabled?: boolean;
+  action?: string;
+  symbol?: string;
+  scan_reason?: string;
+  timestamp?: string;
+  strategy_mode?: string;
+  rr_ratio?: number;
 }
 
 interface UserHistorySnapshot {
@@ -627,6 +633,7 @@ export default function App() {
   ];
 
   const [realCandles, setRealCandles] = useState<Array<{o:number;h:number;l:number;c:number}> | null>(null);
+  const [engineSig, setEngineSig] = useState<{ action: string; symbol: string; reason: string; ts: string } | null>(null);
   const lastErrRef = useRef<string>('');
   const pushErr = useCallback((line: string) => {
     if (lastErrRef.current === line) return; // kill repeats of the same message
@@ -648,6 +655,10 @@ export default function App() {
         queued_signal?: QueuedSignalStatus | null;
       };
 
+      const qs = data.queued_signal ?? null;
+      if (qs && (qs.action === 'BUY' || qs.action === 'SELL') && qs.timestamp) {
+        setEngineSig({ action: String(qs.action), symbol: String(qs.symbol ?? ''), reason: String(qs.scan_reason ?? ''), ts: String(qs.timestamp) });
+      }
       const terminal = data.terminal;
       if (terminal?.candles && terminal.candles.length > 5) {
         setRealCandles(terminal.candles.map((x) => ({ o: x[0], h: x[1], l: x[2], c: x[3] })));
@@ -1935,8 +1946,15 @@ export default function App() {
                     >
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold text-slate-100">{m.symbol}</p>
-                        <SigBadge s={m.signal} />
+                        {engineSig && engineSig.symbol === m.symbol && (engineSig.action === 'BUY' || engineSig.action === 'SELL') ? (
+                          <SigBadge s={engineSig.action as Signal} />
+                        ) : (
+                          <SigBadge s={m.signal} />
+                        )}
                       </div>
+                      {engineSig && engineSig.symbol === m.symbol && engineSig.reason && (
+                        <p className="text-[9px] font-semibold text-violet-300">AI: {engineSig.reason}</p>
+                      )}
                       <div className="mt-1 flex items-center justify-between text-[11px]">
                         <p className="font-semibold text-slate-200">{m.price.toLocaleString()}</p>
                         <p className={m.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{m.change >= 0 ? '+' : ''}{m.change}%</p>

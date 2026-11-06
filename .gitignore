@@ -6,3 +6,5 @@ node_modules/
 .env.local
 .vercel
 .env*
+.prisma-composer/
+.alchemy/

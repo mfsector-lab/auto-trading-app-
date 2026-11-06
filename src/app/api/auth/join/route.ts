@@ -17,7 +17,16 @@ export async function POST(request: NextRequest) {
   if (dbConfigured()) await ensureSchema();
   const existing = getByEmail(email);
   const account = existing ?? createAccount(name, email);
-  if (dbConfigured()) await upsertAccount({ pin: account.pin, name: account.name, email: account.email, isOwner: account.isOwner });
+  let dbInfo = { configured: dbConfigured(), wrote: false, error: '' };
+  if (dbConfigured()) {
+    try {
+      await ensureSchema();
+      await upsertAccount({ pin: account.pin, name: account.name, email: account.email, isOwner: account.isOwner });
+      dbInfo.wrote = true;
+    } catch (e) {
+      dbInfo.error = e instanceof Error ? e.message : 'unknown db error';
+    }
+  }
   const mail = await sendPinEmail(account);
 
   return NextResponse.json({
@@ -30,5 +39,6 @@ export async function POST(request: NextRequest) {
     emailSent: mail.sent,
     emailDetail: mail.sent ? 'sent' : mail.detail,
     mailConfigured: mailConfigured(),
+    db: dbInfo,
   });
 }

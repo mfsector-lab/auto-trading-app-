@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveTradeResult, recentTradeResults, dbConfigured } from '@/lib/db';
+import { saveTradeResult, recentTradeResults, dbConfigured, ensureSchema, saveBridgeSettings, loadBridgeSettings } from '@/lib/db';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_DEFAULT = 120;
@@ -130,6 +130,55 @@ type ClientSignalState = {
 };
 
 const signalState = new Map<string, ClientSignalState>();
+const dirtyClients = new Set<string>();
+let schemaReady = false;
+
+function snapshotState(state: ClientSignalState): Record<string, unknown> {
+  return {
+    lastCardSignal: state.lastCardSignal,
+    closeAllAt: state.closeAllAt,
+    lastGlobalSignal: state.lastGlobalSignal,
+    lastTerminalStatus: state.lastTerminalStatus,
+    lastExecutionStatus: state.lastExecutionStatus,
+    lastRejectionStatus: state.lastRejectionStatus,
+    lastOpenTradesStatus: state.lastOpenTradesStatus.slice(-50),
+    tradeResults: state.tradeResults.slice(-200),
+  };
+}
+
+function restoreState(state: ClientSignalState, snap: Record<string, unknown>): void {
+  for (const k of ['lastCardSignal','closeAllAt','lastGlobalSignal','lastTerminalStatus','lastExecutionStatus','lastRejectionStatus'] as const) {
+    const v = snap[k];
+    if (v !== undefined && v !== null) (state as unknown as Record<string, unknown>)[k] = v;
+  }
+  if (Array.isArray(snap.lastOpenTradesStatus)) state.lastOpenTradesStatus = snap.lastOpenTradesStatus as OpenTradeStatus[];
+  if (Array.isArray(snap.tradeResults)) state.tradeResults = snap.tradeResults as TradeResult[];
+}
+
+async function persistClient(clientId: string): Promise<void> {
+  if (!dbConfigured()) return;
+  dirtyClients.add(clientId);
+  if (!schemaReady) { schemaReady = await ensureSchema(); }
+  const state = signalState.get(clientId);
+  if (!state || !dirtyClients.has(clientId)) return;
+  dirtyClients.delete(clientId);
+  try {
+    await saveBridgeSettings(clientId, snapshotState(state));
+  } catch { /* transient db error — in-memory still works */ }
+}
+
+async function hydrateClient(clientId: string): Promise<ClientSignalState> {
+  const state = getClientSignalState(clientId);
+  // only hydrate a fresh (empty) state to avoid overwriting live memory
+  if (state.lastGlobalSignal || state.lastTerminalStatus) return state;
+  if (!dbConfigured()) return state;
+  if (!schemaReady) { schemaReady = await ensureSchema(); }
+  try {
+    const snap = await loadBridgeSettings(clientId);
+    if (snap) restoreState(state, snap);
+  } catch { /* ignore */ }
+  return state;
+}
 
 function getClientSignalState(clientId: string): ClientSignalState {
   let state = signalState.get(clientId);
@@ -358,7 +407,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const clientId = getClientIdFromSearch(searchParams);
-  const state = getClientSignalState(clientId);
+  const state = await hydrateClient(clientId);
   const mode = searchParams.get('mode') ?? 'signal';
 
   if (!searchParams.get('status')) {
@@ -505,6 +554,7 @@ export async function POST(request: NextRequest) {
       open_profit: toNumber((body as Record<string, unknown>).open_profit, 0),
     };
     state.lastTerminalStatus = terminal;
+    void persistClient(clientId);
     return NextResponse.json({ ok: true, client_id: clientId, terminal, timestamp: terminal.last_seen }, { status: 200 });
   }
 
@@ -520,6 +570,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
     state.lastExecutionStatus = execution;
+    void persistClient(clientId);
     return NextResponse.json({ ok: true, client_id: clientId, execution, timestamp: execution.timestamp }, { status: 200 });
   }
 
@@ -531,6 +582,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
     state.lastRejectionStatus = rejection;
+    void persistClient(clientId);
     return NextResponse.json({ ok: true, client_id: clientId, rejection, timestamp: rejection.timestamp }, { status: 200 });
   }
 
@@ -563,6 +615,7 @@ export async function POST(request: NextRequest) {
       state.tradeResults = state.tradeResults.slice(-500);
     }
     updateAiStats(state);
+    void persistClient(clientId);
     return NextResponse.json(
       { ok: true, client_id: clientId, result, ai_stats: state.aiStats, timestamp: result.timestamp },
       { status: 200 }
@@ -618,6 +671,7 @@ export async function POST(request: NextRequest) {
       open_count: openCount,
       open_profit: openProfit,
     };
+    void persistClient(clientId);
 
     return NextResponse.json(
       { ok: true, client_id: clientId, open_count: openCount, open_profit: openProfit, open_trades: openTrades, timestamp: state.lastTerminalStatus.last_seen },
@@ -674,6 +728,7 @@ export async function POST(request: NextRequest) {
   }
   state.lastSignalByMode.set(mode, payload);
   state.lastGlobalSignal = payload;
+  void persistClient(clientId);
 
   return NextResponse.json(
     {

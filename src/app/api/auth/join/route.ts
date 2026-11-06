@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAccount, getByEmail, maskEmail } from '@/lib/auth/store';
+import { upsertAccount, dbConfigured, ensureSchema } from '@/lib/db';
 import { sendPinEmail, mailConfigured } from '@/lib/auth/mailer';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -13,8 +14,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Enter a valid email address.' }, { status: 400 });
   }
 
+  if (dbConfigured()) await ensureSchema();
   const existing = getByEmail(email);
   const account = existing ?? createAccount(name, email);
+  if (dbConfigured()) await upsertAccount({ pin: account.pin, name: account.name, email: account.email, isOwner: account.isOwner });
   const mail = await sendPinEmail(account);
 
   return NextResponse.json({

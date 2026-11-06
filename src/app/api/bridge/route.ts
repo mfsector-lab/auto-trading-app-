@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { saveBridgeSettings, loadBridgeSettings, dbConfigured } from '@/lib/db';
+
+const pgLoaded = new WeakSet<object>();
 
 type BridgeCommandType = 'TRADE_COMMAND' | 'BOT_POWER' | 'APPLY_SCOPING' | 'STOP_ALL';
 type BridgeCommandStatus = 'queued' | 'dispatched' | 'applied' | 'rejected';
@@ -35,6 +38,9 @@ type BridgeSettings = {
   news_filter: boolean;
   candle_depth: number;
   concurrent_markets: number;
+  autonomous_mode?: boolean;
+  strategy_mode?: string;
+  rr_ratio?: number;
 };
 
 type BridgeEvent = {
@@ -171,6 +177,12 @@ export async function GET(request: NextRequest) {
   const clientId = getClientIdFromSearch(searchParams);
   const state = getClientState(clientId);
   touchBridge(state, bridgeId);
+  if (dbConfigured() && !pgLoaded.has(state)) {
+    pgLoaded.add(state);
+    void loadBridgeSettings(clientId).then((saved) => {
+      if (saved && typeof saved === 'object') Object.assign(state.settings, saved);
+    }).catch(() => {});
+  }
 
   if (searchParams.get('next')) {
     const next = getNextQueued(state, bridgeId);
@@ -240,6 +252,10 @@ export async function POST(request: NextRequest) {
     state.settings.news_filter = toBool(body.news_filter, state.settings.news_filter);
     state.settings.candle_depth = Math.max(100, toInt(body.candle_depth, state.settings.candle_depth));
     state.settings.concurrent_markets = Math.max(1, toInt(body.concurrent_markets, state.settings.concurrent_markets));
+    if (body.autonomous_mode !== undefined) state.settings.autonomous_mode = toBool(body.autonomous_mode, state.settings.autonomous_mode ?? false);
+    if (body.strategy_mode !== undefined) state.settings.strategy_mode = String(body.strategy_mode).toUpperCase();
+    if (body.rr_ratio !== undefined) state.settings.rr_ratio = Math.max(1, Math.min(10, Number(body.rr_ratio) || 2));
+    if (dbConfigured()) void saveBridgeSettings(clientId, state.settings);
 
     const cmd = enqueue(state, 'APPLY_SCOPING', { ...state.settings }, 'web');
     return NextResponse.json({ ok: true, client_id: clientId, settings: state.settings, command: cmd });

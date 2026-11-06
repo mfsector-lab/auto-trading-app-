@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { saveTradeResult, recentTradeResults, dbConfigured } from '@/lib/db';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_DEFAULT = 120;
@@ -544,6 +545,14 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
     state.tradeResults.push(result);
+    if (dbConfigured()) {
+      void saveTradeResult({
+        action: result.action, symbol: result.symbol, ticket: result.ticket, lot: result.lot,
+        open_price: result.open_price, close_price: result.close_price, profit: result.profit,
+        outcome: result.outcome, strategy_mode: (result as unknown as { strategy_mode?: string }).strategy_mode,
+        ea_version: result.ea_version,
+      });
+    }
     if (state.tradeResults.length > 500) {
       state.tradeResults = state.tradeResults.slice(-500);
     }

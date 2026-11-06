@@ -311,6 +311,26 @@ void SendRejectionEvent(string reason, string detail, string sym) {
   PostEvent(payload, "rejection");
 }
 
+void CloseAllManagedPositions() {
+   for (int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if (ticket == 0) continue;
+      if (!PositionSelectByTicket(ticket)) continue;
+      long magic = PositionGetInteger(POSITION_MAGIC);
+      if (magic != MagicSignal && magic != MagicScalp) continue;
+      string sym = PositionGetString(POSITION_SYMBOL);
+      MqlTick tick;
+      if (!SymbolInfoTick(sym, tick)) continue;
+      long ptype = PositionGetInteger(POSITION_TYPE);
+      double vol = PositionGetDouble(POSITION_VOLUME);
+      trade.SetDeviationInPoints(50);
+      bool ok = (ptype == POSITION_TYPE_BUY)
+         ? trade.PositionClose(ticket)
+         : trade.PositionClose(ticket);
+      PrintFormat("[TradeAutomate-MT5] close_all ticket=%I64u result=%s", ticket, ok ? "OK" : "FAIL");
+   }
+}
+
 void SendTradeResultEvent(string action, string sym, ulong ticket, double lot, double openPrice, double closePrice, double profit, int durationSeconds) {
   double pipVal = PipValueForSymbol(sym);
   int pips = 0;
@@ -680,6 +700,14 @@ void OnTimer() {
   string payloadBotEnabled = ExtractJsonValue(body, "bot_enabled");
   if (payloadBotEnabled != "") {
     BotEnabledState = ParseBool(payloadBotEnabled, BotEnabledState);
+  }
+
+  // Close-all command from the dashboard: close every EA-managed position now.
+  string payloadCloseAll = ExtractJsonValue(body, "close_all");
+  if (payloadCloseAll == "true" || payloadCloseAll == "1") {
+    CloseAllManagedPositions();
+    LastSignalId = signalId;
+    return;
   }
   if (!BotEnabledState) {
     LastSignalId = signalId;

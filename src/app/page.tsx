@@ -1042,8 +1042,19 @@ export default function App() {
     }, 1500);
   };
 
-  const closeTrade = () => {
-    setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] Direct close from web app is not enabled yet. Close trade in MT4/MT5 terminal; dashboard will auto-sync on heartbeat.`, ...prev].slice(0, 30));
+  const closeTrade = async () => {
+    try {
+      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] CLOSE ALL sent to terminal...`, ...prev].slice(0, 30));
+      const res = await fetch('/api/signals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, mode: 'scalp', action: 'HOLD', symbol: 'CLOSE_ALL', close_all: true, bot_enabled: true }),
+      });
+      const ok = res.ok;
+      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${ok ? 'CLOSE ALL command sent — EA closes all bot positions within one poll cycle' : 'CLOSE ALL failed (' + res.status + ')'}`, ...prev].slice(0, 30));
+    } catch (e) {
+      setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] CLOSE ALL error: ${String(e)}`, ...prev].slice(0, 30));
+    }
   };
 
   const applyScoping = async () => {

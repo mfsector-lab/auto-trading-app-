@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: dark-venus-cloud-mt5
-    runtime: python
-    rootDir: cloud-mt5
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health

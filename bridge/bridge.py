@@ -737,6 +737,87 @@ def post_ack(command_id: str, status: str, note: str) -> None:
     requests.post(API_BRIDGE_URL, json=payload, timeout=8)
 
 
+def autonomous_engine() -> None:
+    """Bridge-side autonomous loop: every 10s, if autonomous_mode is on, run the
+    scan engine and set latest_signal directly. Does NOT depend on the browser
+    being open. Explicit BUY/SELL from the dashboard still take precedence via
+    the poll loop passthrough."""
+    while True:
+        time.sleep(10)
+        try:
+            with state_lock:
+                if not (state["settings"].get("bot_enabled", True)
+                        and state["settings"].get("autonomous_mode", False)):
+                    continue
+                settings = state["settings"].copy()
+            mode = str(settings.get("strategy_mode", "MOMENTUM_ALPHA")).upper()
+            if mode == "DASHBOARD_SIGNALS":
+                # dashboard cards drive trades; the site-side auto-send pushes them.
+                # as backup, poll the store for fresh BUY/SELL cards every 10s.
+                try:
+                    rr = requests.get(
+                        f"{API_SIGNALS_URL}?status=1&client_id={BRIDGE_CLIENT_ID}", timeout=6)
+                    rr.raise_for_status()
+                    q = (rr.json().get("queued_signal") or {})
+                    act = str(q.get("action", "")).upper()
+                    ts = str(q.get("timestamp", ""))
+                    if act in ("BUY", "SELL") and ts and ts != state.get("_last_dash_sig_ts"):
+                        with state_lock:
+                            state["_last_dash_sig_ts"] = ts
+                            latest = state["latest_signal"].copy()
+                            latest.update({
+                                "action": act,
+                                "symbol": str(q.get("symbol", "EURUSD")).upper(),
+                                "lot": _safe_float(q.get("lot"), settings.get("auto_order_lot", 0.01)),
+                                "comment": "Dashboard_Signal",
+                                "timestamp": now_iso(),
+                            })
+                            block = _risk_gate(latest)
+                            if block:
+                                latest["action"] = "HOLD"
+                                latest["bridge_block_reason"] = block
+                            state["latest_signal"] = latest
+                except Exception:
+                    pass
+                continue
+
+            # engine modes: scan scoped markets and emit signals
+            scoped_csv = str(settings.get("scoped_symbols_csv", "EURUSD"))
+            scoped = [x.strip().upper() for x in scoped_csv.split(",") if x.strip()][:6]
+            base_lot = _safe_float(settings.get("auto_order_lot", 0.01), 0.01)
+            best = None
+            for sym in scoped:
+                scan = _scan_symbol(sym)
+                if scan.get("action") in ("BUY", "SELL"):
+                    if best is None or abs(float(scan.get("score", 0))) > abs(float(best.get("score", 0))):
+                        best = scan
+            emit = best or (_scan_symbol(scoped[0]) if scoped else None)
+            if not emit:
+                continue
+            with state_lock:
+                latest = state["latest_signal"].copy()
+                latest.update({
+                    "action": emit.get("action", "HOLD"),
+                    "symbol": emit.get("symbol", scoped[0]),
+                    "lot": _safe_float(emit.get("lot"), base_lot),
+                    "sl_pips": int(emit.get("sl_pips", 50)),
+                    "tp_pips": int(emit.get("tp_pips", 100)),
+                    "comment": f"Auto_{mode[:12]}",
+                    "scan_reason": emit.get("reason", ""),
+                    "scan_score": emit.get("score", 0.0),
+                    "timestamp": now_iso(),
+                })
+                if latest["action"] in ("BUY", "SELL"):
+                    block = _risk_gate(latest)
+                    if block:
+                        latest["action"] = "HOLD"
+                        latest["bridge_block_reason"] = block
+                        state["risk"]["last_block_reason"] = block
+                state["latest_signal"] = latest
+        except Exception:
+            continue
+
+
 def poll_loop() -> None:
     while True:
         if not state["running"]:
@@ -927,4 +1008,5 @@ if __name__ == "__main__":
     _force_auto_scan("bridge_startup")
     t = threading.Thread(target=poll_loop, daemon=True)
     t.start()
+    threading.Thread(target=autonomous_engine, daemon=True).start()
     app.run(host=HOST, port=PORT)

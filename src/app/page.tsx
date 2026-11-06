@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Nav from '@/components/Nav';
+import GlassCandles from '@/components/GlassCandles';
 import {
   Activity,
   Check,
@@ -1392,7 +1393,11 @@ export default function App() {
 
         <div className="sticky top-16 z-30 rounded-xl border border-gray-200 bg-white/95 p-3 backdrop-blur-xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <span className={`glass ${autonomousMode ? 'glass-violet' : ''} rounded-full px-3 py-1.5 text-[10px] font-bold text-violet-200`}>Autonomous: {autonomousMode ? 'ON' : 'OFF'}</span>
+              <span className={`glass rounded-full px-3 py-1.5 text-[10px] font-bold ${botEnabled ? 'glass-emerald text-emerald-200' : 'glass-crimson text-rose-200'}`}>Bot Status: {botEnabled ? 'ON' : 'OFF'}</span>
+              <span className="glass rounded-full px-3 py-1.5 text-[10px] font-bold font-mono text-slate-200">P/L: ${openProfit.toFixed(2)}</span>
+              <span className="glass rounded-full px-3 py-1.5 text-[10px] font-bold text-slate-300">RR 1:{rrRatio}</span>
               <button onClick={sendScalp} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
                 Quick Send
               </button>
@@ -1414,6 +1419,35 @@ export default function App() {
               <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">Open: {brokerOpenCount}</span>
               <span className={`rounded-full border px-2 py-1 ${openProfit >= 0 ? 'border-green-300 bg-green-50 text-green-700' : 'border-red-300 bg-red-50 text-red-700'}`}>P/L: ${openProfit.toFixed(2)}</span>
             </div>
+          </div>
+        </div>
+
+        <GlassCandles symbol={selectedMarket?.symbol ?? scalp.symbol} />
+
+        <div className="glass p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unified Execution Terminal</p>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button onClick={() => { setScalp((pp) => ({ ...pp, mode: 'BUY' })); void sendScalp(); }} className="glass glass-emerald rounded-xl px-4 py-3 text-left">
+              <span className="flex items-center justify-between">
+                <span className="text-sm font-bold text-emerald-200">BUY</span>
+                <span className="badge-dark px-2 py-0.5 text-[10px] font-bold text-emerald-100">{buys}</span>
+              </span>
+              <span className="mt-1 block text-[10px] text-slate-400">market {scalp.symbol} · lot {scalp.lot}</span>
+            </button>
+            <button onClick={() => { setScalp((pp) => ({ ...pp, mode: 'SELL' })); void sendScalp(); }} className="glass glass-crimson rounded-xl px-4 py-3 text-left">
+              <span className="flex items-center justify-between">
+                <span className="text-sm font-bold text-rose-200">SELL</span>
+                <span className="badge-dark px-2 py-0.5 text-[10px] font-bold text-rose-100">{sells}</span>
+              </span>
+              <span className="mt-1 block text-[10px] text-slate-400">market {scalp.symbol} · lot {scalp.lot}</span>
+            </button>
+            <button onClick={() => { setErrorLogs((prev) => [`[${new Date().toLocaleTimeString()}] HOLD acknowledged — no trade sent.`, ...prev].slice(0, 30)); }} className="glass glass-amber rounded-xl px-4 py-3 text-left">
+              <span className="flex items-center justify-between">
+                <span className="text-sm font-bold text-amber-200">HOLD</span>
+                <span className="badge-dark px-2 py-0.5 text-[10px] font-bold text-amber-100">{holds}</span>
+              </span>
+              <span className="mt-1 block text-[10px] text-slate-400">stand down · keep positions</span>
+            </button>
           </div>
         </div>
 
@@ -2256,10 +2290,10 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1">
               {([
-                ['execution', `Execution (${log.length})`],
-                ['errors', `Errors (${errorLogs.length})`],
-                ['history', `History (${tradeHistory.length})`],
-              ] as const).map(([id, label]) => (
+                ['execution', `Execution (${log.length})`, '#10B981'],
+                ['errors', `Errors (${errorLogs.length})`, '#EF4444'],
+                ['history', `History (${tradeHistory.length})`, '#8B5CF6'],
+              ] as const).map(([id, label, color]) => (
                 <button
                   key={id}
                   onClick={() => {

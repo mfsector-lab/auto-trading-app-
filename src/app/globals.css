@@ -133,3 +133,103 @@ body {
 :root[data-theme='dark'] code {
   color: #93c5fd;
 }
+
+
+/* ================= DARK VENUS GLASSMORPHISM THEME ================= */
+/* Base: deep midnight navy with soft radial glows */
+html, body {
+  background-color: #04060A;
+  color: #e5e7eb;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(600px 400px at 15% 10%, rgba(139, 92, 246, 0.10), transparent 70%),
+    radial-gradient(700px 500px at 85% 20%, rgba(16, 185, 129, 0.07), transparent 70%),
+    radial-gradient(800px 600px at 50% 100%, rgba(139, 92, 246, 0.06), transparent 70%);
+}
+main, header, footer { position: relative; z-index: 1; }
+
+/* Frosted glass for every card / panel surface */
+.bg-white,
+.bg-gray-50,
+.bg-white\/95,
+.bg-white\/90 {
+  background: rgba(10, 15, 30, 0.4) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+/* inner light panels become subtle glass wells */
+.bg-gray-100, .bg-gray-50 {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+/* slate cards on dark pages get the same frost */
+.bg-slate-900\/70, .bg-slate-900\/80, .bg-slate-900\/60 {
+  background: rgba(10, 15, 30, 0.4) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.bg-slate-950\/80, .bg-slate-950\/70, .bg-slate-900 {
+  background: rgba(6, 10, 22, 0.55) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* hairline borders everywhere */
+.border-gray-200, .border-gray-100, .border-gray-300, .border-slate-700 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* text scale flip for readability on dark glass */
+.text-gray-900 { color: #f9fafb !important; }
+.text-gray-800 { color: #e5e7eb !important; }
+.text-gray-700 { color: #d1d5db !important; }
+.text-gray-600 { color: #9ca3af !important; }
+.text-gray-500 { color: #8b93a3 !important; }
+.text-gray-400 { color: #9ca3af !important; }
+.text-gray-300 { color: #b7bfcc !important; }
+
+/* status tints -> neon on translucent wells */
+.bg-green-50, .bg-green-100 { background: rgba(16, 185, 129, 0.12) !important; }
+.text-green-700, .text-green-600 { color: #34d399 !important; }
+.border-green-200, .border-green-300 { border-color: rgba(16, 185, 129, 0.35) !important; }
+.bg-red-50, .bg-red-100 { background: rgba(239, 68, 68, 0.12) !important; }
+.text-red-700, .text-red-600 { color: #f87171 !important; }
+.border-red-200, .border-red-300 { border-color: rgba(239, 68, 68, 0.35) !important; }
+.bg-amber-50, .bg-amber-100 { background: rgba(245, 158, 11, 0.12) !important; }
+.text-amber-800, .text-amber-700 { color: #fbbf24 !important; }
+.bg-blue-600 { background: #10B981 !important; }          /* primary action = emerald */
+.hover\:bg-blue-700:hover { background: #0ea371 !important; }
+.bg-gray-900 { background: rgba(255, 255, 255, 0.06) !important; color: #e5e7eb !important; }
+.hover\:bg-gray-100:hover, .hover\:bg-gray-50:hover { background: rgba(255, 255, 255, 0.07) !important; }
+
+/* micro-glow interactive elements */
+button { transition: box-shadow .2s ease, transform .1s ease; }
+button:hover { box-shadow: 0 0 14px rgba(139, 92, 246, 0.25); }
+
+/* slim neon scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(139,92,246,.35); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* monospace numerics */
+.tabular, .font-mono { font-variant-numeric: tabular-nums; }
+
+/* glass utility for new components */
+.glass {
+  background: rgba(10, 15, 30, 0.4);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+.glass-emerald { background: linear-gradient(160deg, rgba(16,185,129,.28), rgba(16,185,129,.10)); border: 1px solid rgba(16,185,129,.35); }
+.glass-crimson { background: linear-gradient(160deg, rgba(239,68,68,.28), rgba(239,68,68,.10)); border: 1px solid rgba(239,68,68,.35); }
+.glass-amber   { background: linear-gradient(160deg, rgba(245,158,11,.26), rgba(245,158,11,.10)); border: 1px solid rgba(245,158,11,.35); }
+.glass-violet  { background: linear-gradient(160deg, rgba(139,92,246,.30), rgba(139,92,246,.10)); border: 1px solid rgba(139,92,246,.35); }
+.badge-dark { background: rgba(4,6,10,.75); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; }

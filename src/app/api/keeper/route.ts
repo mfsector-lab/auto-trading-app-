@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { dbConfigured } from '@/lib/db';
 
 /**
  * Cloud heartbeat keeper.
@@ -21,6 +22,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
+  return NextResponse.json({ ok: true, alive: false, db: dbConfigured() });
   const k = g.__cloudKeeper;
   if (!k) return NextResponse.json({ ok: true, alive: false });
   const alive = Date.now() - Date.parse(k.last) < 90_000;

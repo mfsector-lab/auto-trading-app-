@@ -233,3 +233,34 @@ button:hover { box-shadow: 0 0 14px rgba(139, 92, 246, 0.25); }
 .glass-amber   { background: linear-gradient(160deg, rgba(245,158,11,.26), rgba(245,158,11,.10)); border: 1px solid rgba(245,158,11,.35); }
 .glass-violet  { background: linear-gradient(160deg, rgba(139,92,246,.30), rgba(139,92,246,.10)); border: 1px solid rgba(139,92,246,.35); }
 .badge-dark { background: rgba(4,6,10,.75); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; }
+
+
+/* ================= COMPACT DENSITY LAYER ================= */
+.p-3 { padding: 10px !important; }
+.p-4 { padding: 12px !important; }
+.p-5 { padding: 14px !important; }
+.px-4 { padding-left: 12px !important; padding-right: 12px !important; }
+.py-2 { padding-top: 6px !important; padding-bottom: 6px !important; }
+.py-2\.5 { padding-top: 7px !important; padding-bottom: 7px !important; }
+.py-3 { padding-top: 8px !important; padding-bottom: 8px !important; }
+.py-5 { padding-top: 10px !important; padding-bottom: 10px !important; }
+.py-6 { padding-top: 12px !important; padding-bottom: 12px !important; }
+.py-8 { padding-top: 14px !important; padding-bottom: 14px !important; }
+.mt-2 { margin-top: 6px !important; }
+.mt-3 { margin-top: 8px !important; }
+.mt-4 { margin-top: 10px !important; }
+.mt-5 { margin-top: 12px !important; }
+.gap-2 { gap: 6px !important; }
+.gap-3 { gap: 8px !important; }
+.gap-4 { gap: 10px !important; }
+.space-y-2 > * + * { margin-top: 6px !important; }
+.space-y-3 > * + * { margin-top: 8px !important; }
+.space-y-4 > * + * { margin-top: 10px !important; }
+.space-y-5 > * + * { margin-top: 12px !important; }
+.rounded-2xl { border-radius: 12px !important; }
+.rounded-\[26px\], .rounded-\[28px\] { border-radius: 14px !important; }
+.text-sm { font-size: 13px !important; }
+.text-xl { font-size: 17px !important; }
+.text-2xl { font-size: 20px !important; }
+h1 { font-size: 17px !important; }
+h2 { font-size: 15px !important; }

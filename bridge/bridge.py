@@ -473,20 +473,18 @@ def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = 
         tp_pips = max(3, int(round(sl_pips * 0.6)))  # scalper: fast small TP
 
     else:  # MOMENTUM_ALPHA — original multi-timeframe confirmation
+        # Practical frequency: trend agreement on EITHER timeframe (both was ~1 signal/hour),
+        # MACD direction, and an exhaustion guard. Still trend-following, still gated.
         buy_cond = (
-            current_close > sma5
-            and rsi14 < 70
-            and h1_trend == "BULLISH"
-            and m5_trend == "BULLISH"
+            (h1_trend == "BULLISH" or m5_trend == "BULLISH")
             and current_macd > current_signal
+            and rsi14 < 68
             and current_close < bb_upper
         )
         sell_cond = (
-            current_close < sma5
-            and rsi14 > 30
-            and h1_trend == "BEARISH"
-            and m5_trend == "BEARISH"
+            (h1_trend == "BEARISH" or m5_trend == "BEARISH")
             and current_macd < current_signal
+            and rsi14 > 32
             and current_close > bb_lower
         )
         if buy_cond:

@@ -857,6 +857,8 @@ def autonomous_engine() -> None:
                                 latest["action"] = "HOLD"
                                 latest["bridge_block_reason"] = block
                             state["latest_signal"] = latest
+                            if latest.get("action") in ("BUY", "SELL"):
+                                _mirror_to_backend(latest)
                 except Exception:
                     pass
                 # No fresh dashboard card? Fall back to the engine scan so

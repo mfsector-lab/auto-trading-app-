@@ -774,6 +774,32 @@ def _scan_and_emit(settings: Dict[str, Any], strategy_mode: str) -> None:
                 latest["bridge_block_reason"] = block
                 state["risk"]["last_block_reason"] = block
         state["latest_signal"] = latest
+        if latest.get("action") in ("BUY", "SELL"):
+            _mirror_to_backend(latest)
+
+
+def _mirror_to_backend(sig: Dict[str, Any]) -> None:
+    """Dual-path: push the engine's BUY/SELL into the site's signal store so the
+    EA receives it whichever URL it polls. Fire-and-forget, never blocks the scan."""
+    try:
+        import requests as _rq
+        payload = {
+            "client_id": os.getenv("BRIDGE_CLIENT_ID", "default"),
+            "mode": "scalp",
+            "action": sig.get("action"),
+            "symbol": sig.get("symbol"),
+            "lot": sig.get("lot", 0.01),
+            "tp_pips": sig.get("tp_pips"),
+            "sl_pips": sig.get("sl_pips"),
+            "comment": sig.get("comment", "Auto_engine"),
+            "scan_reason": sig.get("scan_reason", ""),
+            "bot_enabled": True,
+            "strategy_mode": state["settings"].get("strategy_mode"),
+            "rr_ratio": state["settings"].get("rr_ratio", 2.0),
+        }
+        _rq.post(API_SIGNALS_URL, json=payload, timeout=6)
+    except Exception as e:
+        state["risk"]["last_block_reason"] = f"mirror: {e}"
 
 
 def autonomous_engine() -> None:

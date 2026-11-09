@@ -477,10 +477,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const payload = state.lastSignalByMode.get(mode) ?? state.lastGlobalSignal ?? {
+  // Serve the freshest actionable signal: engine/card BUY|SELL beats heartbeats.
+  const FRESH_MS = 120_000;
+  const card = state.lastCardSignal;
+  const cardFresh = !!card && (card.action === 'BUY' || card.action === 'SELL')
+    && card.timestamp && (Date.now() - Date.parse(card.timestamp)) < FRESH_MS;
+  const global = state.lastGlobalSignal;
+  const globalFresh = !!global && (global.action === 'BUY' || global.action === 'SELL')
+    && global.timestamp && (Date.now() - Date.parse(global.timestamp)) < FRESH_MS;
+  const DEFAULT_PAYLOAD: SignalPayload = {
     mode,
-    action: 'HOLD' as SignalAction,
-    account_mode: 'AUTO' as const,
+    action: 'HOLD',
+    account_mode: 'AUTO',
     bot_enabled: true,
     symbol: 'EURUSD',
     lot: 0.01,
@@ -502,6 +510,13 @@ export async function GET(request: NextRequest) {
     autonomous_mode: false,
     timestamp: new Date().toISOString(),
   };
+  let payload = state.lastSignalByMode.get(mode) ?? state.lastGlobalSignal ?? DEFAULT_PAYLOAD;
+
+  if (cardFresh && (globalFresh ? String(card!.timestamp) >= String(global!.timestamp) : true)) {
+    payload = { ...card!, mode };
+  } else if (globalFresh) {
+    payload = { ...global!, mode };
+  }
 
   return NextResponse.json(payload, {
     status: 200,

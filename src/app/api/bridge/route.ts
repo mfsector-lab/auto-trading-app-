@@ -67,7 +67,7 @@ function defaultSettings(): BridgeSettings {
   return {
     bot_enabled: true,
     account_mode: 'LIVE',
-    max_open_trades: 5,
+    max_open_trades: 20,
     auto_order_lot: 0.01,
     max_daily_loss: 250,
     max_lot: 0.1,

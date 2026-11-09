@@ -505,7 +505,7 @@ export async function GET(request: NextRequest) {
     news_filter: true,
     candle_depth: 200,
     concurrent_markets: 5,
-    max_open_trades: 5,
+    max_open_trades: 20,
     scoped_symbols_csv: 'EURUSD,GBPUSD,USDJPY,XAUUSD,BTCUSD,USDCAD,AUDUSD,US500,NAS100,USOIL',
     autonomous_mode: false,
     timestamp: new Date().toISOString(),

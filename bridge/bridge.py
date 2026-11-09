@@ -39,7 +39,7 @@ state: Dict[str, Any] = {
     "settings": {
         "bot_enabled": True,
         "account_mode": "LIVE",
-        "max_open_trades": 5,
+        "max_open_trades": 20,
         "auto_order_lot": 0.01,
         "auto_scan_enabled": True,
         "autonomous_mode": False,
@@ -74,7 +74,7 @@ state: Dict[str, Any] = {
         "max_spread": 2,
         "magic": 54321,
         "comment": "TradeAutomate_Scalp",
-        "max_open_trades": 5,
+        "max_open_trades": 20,
         "max_daily_loss": 250,
         "max_lot": 0.1,
         "no_trade_windows_utc": "",

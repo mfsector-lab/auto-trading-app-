@@ -411,6 +411,23 @@ def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = 
     reason = "no_entry"
     mode = (strategy_mode or "MOMENTUM_ALPHA").upper()
     if mode == "DASHBOARD_SIGNALS":
+        # Prefer a fresh dashboard card signal; if none arrived in the last 90s,
+        # fall through to the strategy scanner instead of holding forever.
+        try:
+            card = state.get("_last_card_signal") or {}
+            card_age = time.time() - float(card.get("_ts", 0))
+            if card.get("action") in ("BUY", "SELL") and card_age < 90:
+                return {
+                    "action": card["action"], "strategy_mode": mode, "score": 1.0,
+                    "reason": f"dashboard_card_{card.get('symbol','')}", "timeframe": "5m",
+                    "sl_pips": int(card.get("sl_pips") or _safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0)),
+                    "tp_pips": int(card.get("tp_pips") or 100),
+                    "candle_ts": "", "price": closes[-1] if closes else 0.0,
+                    "lot": 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot),
+                    "h1_trend": "", "m5_trend": "", "rsi14": 50.0, "macd": 0.0, "signal": 0.0,
+                }
+        except Exception:
+            pass
         return {
             "action": "HOLD", "strategy_mode": mode, "score": 0.0,
             "reason": "dashboard_signals_mode", "timeframe": "5m",
@@ -890,6 +907,10 @@ def poll_loop() -> None:
                     sr.raise_for_status()
                     sd = sr.json()
                     q = sd.get("card_signal") or sd.get("queued_signal") or {}
+                    if q.get("action") in ("BUY", "SELL"):
+                        entry = dict(q)
+                        entry["_ts"] = time.time()
+                        state["_last_card_signal"] = entry
                     sm = q.get("strategy_mode")
                     if sm:
                         state["settings"]["strategy_mode"] = str(sm).upper()

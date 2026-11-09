@@ -167,10 +167,13 @@ async function persistClient(clientId: string): Promise<void> {
   } catch { /* transient db error — in-memory still works */ }
 }
 
+const lastHydrateAt = new Map<string, number>();
 async function hydrateClient(clientId: string): Promise<ClientSignalState> {
   const state = getClientSignalState(clientId);
-  // only hydrate a fresh (empty) state to avoid overwriting live memory
-  if (state.lastGlobalSignal || state.lastTerminalStatus) return state;
+  const now = Date.now();
+  const last = lastHydrateAt.get(clientId) ?? 0;
+  if (now - last < 4000) return state;
+  lastHydrateAt.set(clientId, now);
   if (!dbConfigured()) return state;
   if (!schemaReady) { schemaReady = await ensureSchema(); }
   try {
@@ -743,7 +746,11 @@ export async function POST(request: NextRequest) {
   }
   state.lastSignalByMode.set(mode, payload);
   state.lastGlobalSignal = payload;
-  void persistClient(clientId);
+  if (payload.action === 'BUY' || payload.action === 'SELL' || payload.strategy_mode) {
+    await persistClient(clientId);
+  } else {
+    void persistClient(clientId);
+  }
 
   return NextResponse.json(
     {

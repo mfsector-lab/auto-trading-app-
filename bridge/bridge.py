@@ -443,15 +443,8 @@ def _decide_from_market_scan(symbol: str, base_lot: float, strategy_mode: str = 
                 }
         except Exception:
             pass
-        return {
-            "action": "HOLD", "strategy_mode": mode, "score": 0.0,
-            "reason": "dashboard_signals_mode", "timeframe": "5m",
-            "sl_pips": int(_safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0)),
-            "tp_pips": int(round(_safe_float(state["settings"].get("min_sl_pips", 50.0), 50.0) * _safe_float(state["settings"].get("rr_ratio", 2.0), 2.0))),
-            "candle_ts": "", "price": closes[-1] if closes else 0.0,
-            "lot": 0.02 if _is_precious_metal(symbol) else max(0.01, base_lot),
-            "h1_trend": "", "m5_trend": "", "rsi14": 50.0, "macd": 0.0, "signal": 0.0,
-        }
+        # No fresh card for 90s → scanner fallback (never sit silent).
+        pass  # fall through to the strategy scanner below
 
     # ATR regime for volatility strategies
     atr_ma = _sma([max(h - l, 1e-9) for h, l in zip(highs, lows)], 20) if len(highs) >= 20 else atr_values[-1] if atr_values else 0.0

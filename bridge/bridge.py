@@ -1114,6 +1114,21 @@ def _save_persisted_flag(on: bool) -> None:
     except Exception:
         pass
 
+def _supervise(name: str, target, restart_delay: float = 5.0) -> None:
+    """Auto-recovery: if a worker thread dies from an unhandled error, log it,
+    clear transient signal state, and re-establish it within 5 seconds."""
+    while True:
+        try:
+            target()
+        except Exception as exc:
+            try:
+                with state_lock:
+                    state["last_error"] = f"{name}: {type(exc).__name__}: {exc}"[:200]
+            except Exception:
+                pass
+            time.sleep(restart_delay)
+
+
 if __name__ == "__main__":
     _load_persisted_flags()
     _force_auto_scan("bridge_startup")

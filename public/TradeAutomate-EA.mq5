@@ -568,12 +568,31 @@ void EnforceStopDistance(string sym, int orderType, double marketPrice, double &
 
 bool ApplyStopsIfPossible(string sym, ulong ticket, int orderType, double sl, double tp) {
   if (ticket == 0 || (sl <= 0 && tp <= 0)) return(false);
-  for (int attempt = 0; attempt < 3; attempt++) {
-    MqlTick _tick; SymbolInfoTick(sym, _tick);
+
+  // (3) Broker-exact rounding: use the symbol's digits so the server never sees
+  // an unrepresentable price (retcode 10016 / err 4756 "Invalid stops").
+  int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+  sl = NormalizeDouble(sl, digits);
+  tp = NormalizeDouble(tp, digits);
+
+  // (2) Strict retry ceiling: at most 2 attempts, then abandon for this cycle.
+  int maxAttempts = 2;
+  for (int attempt = 0; attempt < maxAttempts; attempt++) {
     double marketRef = orderType == POSITION_TYPE_BUY ? SymbolInfoDouble(sym, SYMBOL_BID) : SymbolInfoDouble(sym, SYMBOL_ASK);
     double nextSl = sl;
     double nextTp = tp;
     EnforceStopDistance(sym, orderType, marketRef, nextSl, nextTp);
+    nextSl = NormalizeDouble(nextSl, digits);
+    nextTp = NormalizeDouble(nextTp, digits);
+
+    // Skip no-op modifies: same stops as current position => nothing to send.
+    double curSl = PositionGetDouble(POSITION_SL);
+    double curTp = PositionGetDouble(POSITION_TP);
+    if (PositionSelectByTicket(ticket)
+        && MathAbs(nextSl - curSl) < SymbolInfoDouble(sym, SYMBOL_POINT) * 0.5
+        && (nextTp <= 0 || MathAbs(nextTp - curTp) < SymbolInfoDouble(sym, SYMBOL_POINT) * 0.5)) {
+      return(true);
+    }
 
     MqlTradeRequest req;
     MqlTradeResult res;
@@ -589,12 +608,19 @@ bool ApplyStopsIfPossible(string sym, ulong ticket, int orderType, double sl, do
     if (sent && (res.retcode == TRADE_RETCODE_DONE || res.retcode == TRADE_RETCODE_DONE_PARTIAL)) return(true);
 
     int err = GetLastError();
+    // (1) Trap 10016 (invalid stops) / 4756: log ONCE as soft warning, never retry.
+    if (res.retcode == 10016 || err == 4756) {
+      if (EnableLogs) {
+        Print("[TradeAutomate-MT5] SL/TP invalid-stops (soft skip). ticket=", ticket, " retcode=", (int)res.retcode, " err=", err, " — abandoned for this cycle");
+      }
+      return(false);
+    }
     if (EnableLogs) {
-      Print("[TradeAutomate-MT5] SL/TP modify failed. ticket=", ticket, " attempt=", (attempt + 1), " retcode=", (int)res.retcode, " err=", err, " ", TradeErrorMessage(err));
+      Print("[TradeAutomate-MT5] SL/TP modify failed. ticket=", ticket, " attempt=", (attempt + 1), "/", maxAttempts, " retcode=", (int)res.retcode, " err=", err, " ", TradeErrorMessage(err));
     }
     Sleep(250);
   }
-  SendRejectionEvent("order_stops_failed", "Could not apply SL/TP after order fill", sym);
+  SendRejectionEvent("order_stops_failed", "Could not apply SL/TP (gave up after 2 attempts)", sym);
   return(false);
 }
 

@@ -125,6 +125,17 @@ def merge_settings(payload: Dict[str, Any]) -> None:
     for key in s.keys():
         if key in payload:
             s[key] = payload[key]
+    # Symbol lists are monotonic: merged as a union so a stale snapshot can never
+    # re-shrink the allowlist and silently block scanner symbols (BTCUSD lock).
+    for list_key in ("allowed_symbols_csv", "scoped_symbols_csv"):
+        incoming = str(payload.get(list_key, "") or "")
+        current = str(s.get(list_key, "") or "")
+        union = [x.strip().upper() for x in current.split(",") if x.strip()]
+        for sym in (x.strip().upper() for x in incoming.split(",")):
+            if sym and sym not in union:
+                union.append(sym)
+        if union:
+            s[list_key] = ",".join(union)
     s["scalp_mode"] = True
     s["auto_scan_enabled"] = bool(s.get("bot_enabled", True))
 

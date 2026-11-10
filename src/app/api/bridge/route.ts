@@ -72,7 +72,7 @@ function defaultSettings(): BridgeSettings {
     max_daily_loss: 250,
     max_lot: 0.1,
     no_trade_windows_utc: '',
-    allowed_symbols_csv: 'XAUUSD,EURUSD,GBPUSD,USDJPY',
+    allowed_symbols_csv: 'XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USDCAD,AUDUSD,US500,NAS100,USOIL',
     xau_session_utc: '00:00-23:59',
     only_xau_session_filter: false,
     lock_symbol: '',

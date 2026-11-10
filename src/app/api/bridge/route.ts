@@ -180,7 +180,21 @@ export async function GET(request: NextRequest) {
   if (dbConfigured() && !pgLoaded.has(state)) {
     pgLoaded.add(state);
     void loadBridgeSettings(clientId).then((saved) => {
-      if (saved && typeof saved === 'object') Object.assign(state.settings, saved);
+      if (saved && typeof saved === 'object') {
+        Object.assign(state.settings, saved);
+        // Migration guard: never let a stale snapshot re-shrink the allowlist/scoped set.
+        const CANONICAL = 'XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD';
+        const mergeList = (v: unknown, fallback: string) => {
+          const cur = String(v ?? '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+          const base = fallback.split(',');
+          const merged = Array.from(new Set([...base, ...cur])).join(',');
+          return cur.length ? merged : fallback;
+        };
+        state.settings.allowed_symbols_csv = mergeList(state.settings.allowed_symbols_csv, CANONICAL);
+        state.settings.scoped_symbols_csv = mergeList(
+          state.settings.scoped_symbols_csv,
+          'EURUSD,GBPUSD,USDJPY,XAUUSD,BTCUSD,USDCAD,AUDUSD,US500,NAS100,USOIL');
+      }
     }).catch(() => {});
   }
 

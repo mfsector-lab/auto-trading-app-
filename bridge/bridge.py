@@ -1106,7 +1106,7 @@ def _save_persisted_flag(on: bool) -> None:
 if __name__ == "__main__":
     _load_persisted_flags()
     _force_auto_scan("bridge_startup")
-    t = threading.Thread(target=poll_loop, daemon=True)
+    t = threading.Thread(target=_supervise, args=('poll_loop', poll_loop), kwargs={'restart_delay': 5.0}, daemon=True)
     t.start()
-    threading.Thread(target=autonomous_engine, daemon=True).start()
+    threading.Thread(target=_supervise, args=('autonomous_engine', autonomous_engine), kwargs={'restart_delay': 5.0}, daemon=True).start()
     app.run(host=HOST, port=PORT)

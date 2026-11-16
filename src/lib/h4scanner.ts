@@ -10,16 +10,17 @@ export interface Pivot { index: number; price: number; t: number }
 export interface PatternSetup {
   pair: string;
   direction: 'BEARISH_HS' | 'BULLISH_IHS';
-  status: 'FORMING' | 'NECKLINE_BREAKOUT';
+  status: 'FORMING' | 'EARLY_FORMING' | 'NECKLINE_BREAKOUT';
   neckline: number;
   head: number;
   leftShoulder: Pivot;
   rightShoulder: Pivot;
-  // measured move target = head → neckline projected from breakout
   target: number;
   stopLoss: number;
-  confidence: number; // 0..100 self-learning score
-  smc: string[];      // tags: liquidity_sweep, order_block, fvg
+  confidence: number; // 55..95 hybrid technical + self-learning
+  technicalScore: number;
+  learnAdjust: number;
+  smc: string[];
   detectedAt: string;
 }
 
@@ -38,89 +39,169 @@ export function findPivots(bars: Bar[], left = 3, right = 3): Pivot[] {
   return pivots;
 }
 
-/** Detect head & shoulders (bearish) and inverse H&S (bullish) on H4 bars. */
-export function detectHeadShoulders(pair: string, bars: Bar[], learnScore = 50): PatternSetup | null {
-  if (bars.length < 60) return null;
-  const highs = findPivots(bars, 3, 3).filter((p) => Math.abs(p.price - bars[p.index].h) < 1e-12);
-  const lows = findPivots(bars, 3, 3).filter((p) => Math.abs(p.price - bars[p.index].l) < 1e-12);
+export const MAJOR_PAIRS = [
+  'EURUSD','GBPUSD','USDJPY','USDCHF','USDCAD','AUDUSD','NZDUSD',
+  'EURJPY','GBPJPY','AUDJPY','NZDJPY','CADJPY','CHFJPY',
+  'EURAUD','GBPAUD','AUDCAD','AUDCHF','EURNZD','GBPNZD','AUDNZD','NZDCAD','NZDCHF',
+];
+export const MINOR_PAIRS: string[] = [];
+export const ALL_PAIRS = [...MAJOR_PAIRS, 'XAUUSD'];
 
-  // ── bearish H&S: LS, Head, RS among swing highs, RS price ~ LS price, neckline under troughs
+export const TICKER: Record<string, string> = {
+  EURUSD: 'EURUSD=X', GBPUSD: 'GBPUSD=X', USDJPY: 'JPY=X', USDCHF: 'CHF=X',
+  USDCAD: 'CAD=X', AUDUSD: 'AUDUSD=X', NZDUSD: 'NZDUSD=X',
+  EURJPY: 'EURJPY=X', GBPJPY: 'GBPJPY=X', AUDJPY: 'AUDJPY=X', NZDJPY: 'NZDJPY=X',
+  CADJPY: 'CADJPY=X', CHFJPY: 'CHFJPY=X',
+  EURAUD: 'EURAUD=X', GBPAUD: 'GBPAUD=X', AUDCAD: 'AUDCAD=X', AUDCHF: 'AUDCHF=X',
+  EURNZD: 'EURNZD=X', GBPNZD: 'GBPNZD=X', AUDNZD: 'AUDNZD=X', NZDCAD: 'NZDCAD=X', NZDCHF: 'NZDCHF=X',
+  XAUUSD: 'GC=F',
+};
+
+export interface ScoreFactors {
+  symmetryHead: number;   // 0..15 shoulder symmetry + head prominence
+  neckline: number;       // 0..10 clean slope + touch count
+  smcCount: number;       // 0..30 (10 per SMC tag)
+  macroNews: number;      // 0..5
+  total: number;
+}
+
+/** Technical quality score, 0..60 — combined with learning adjust in the API layer. */
+export function scoreSetup(
+  head: number, lsPrice: number, rsPrice: number, neckline: number,
+  bars: Bar[], lsIdx: number, rsIdx: number, smc: string[],
+  macroAligned: boolean, highImpactSoon: boolean,
+): ScoreFactors {
+  // shoulder symmetry + head prominence (up to +15)
+  const shoulderDiff = Math.abs(rsPrice - lsPrice) / head;
+  const headRiseL = (head - lsPrice) / head;
+  const headRiseR = (head - rsPrice) / head;
+  const symScore = Math.max(0, 15 - shoulderDiff * 600 - Math.abs(headRiseL - headRiseR) * 200);
+
+  // neckline: near-flat slope + at least 2 touches (up to +10)
+  const span = Math.max(1, rsIdx - lsIdx);
+  const slope = Math.abs(neckline - bars[Math.max(0, lsIdx - 2)].l) / Math.max(1e-12, bars[Math.max(0, lsIdx - 2)].l);
+  let touches = 0;
+  const band = neckBand(neckline, bars, lsIdx, rsIdx);
+  for (let i = lsIdx; i <= Math.min(bars.length - 1, rsIdx + 5); i++) {
+    if (bars[i].l <= band && bars[i].c > band) touches++;
+  }
+  const neckScore = Math.max(0, 10 - slope * 500 + Math.min(3, touches) * 2.5);
+
+  // SMC confluence (+10 each, up to +30)
+  const smcScore = Math.min(30, smc.length * 10);
+
+  // macro/news alignment (+5)
+  const macroScore = macroAligned ? 5 : highImpactSoon ? 2 : 0;
+
+  const total = symScore + neckScore + smcScore + macroScore;
+  return { symmetryHead: Math.min(15, symScore), neckline: Math.min(10, neckScore), smcCount: smcScore, macroNews: macroScore, total };
+}
+
+function neckBand(neckline: number, bars: Bar[], lsIdx: number, rsIdx: number) {
+  void bars; void lsIdx; void rsIdx;
+  return neckline; // touch = close within a hair of neckline then reject
+}
+
+/** Clamp hybrid confidence into 55..95 */
+export function clampConfidence(raw: number): number {
+  return Math.max(55, Math.min(95, Math.round(raw)));
+}
+
+/**
+ * Detect H&S (bearish) / Inverse H&S (bullish).
+ * `relaxed`: also accept EARLY_FORMING (RS still developing near the neckline).
+ */
+export function detectHeadShoulders(
+  pair: string,
+  bars: Bar[],
+  learnAdjust = 0,
+  opts?: { relaxed?: boolean; macroAligned?: boolean; highImpactSoon?: boolean },
+): PatternSetup | null {
+  const relaxed = opts?.relaxed ?? true;
+  const macroAligned = opts?.macroAligned ?? false;
+  const highImpactSoon = opts?.highImpactSoon ?? false;
+  if (bars.length < 60) return null;
+
+  const allPivots = findPivots(bars, 3, 3);
+  const highs = allPivots.filter((p) => p.price >= bars[p.index].h);
+  const lows = allPivots.filter((p) => p.price <= bars[p.index].l);
+
+  const build = (
+    direction: 'BEARISH_HS' | 'BULLISH_IHS',
+    ls: Pivot, head: Pivot, rs: Pivot, neckline: number, status: PatternSetup['status'],
+  ): PatternSetup => {
+    const smc: string[] = [];
+    const afterHead = bars.slice(head.index);
+    if (direction === 'BEARISH_HS' && afterHead.some((b) => b.h > head.price * 1.001 && b.c < head.price)) smc.push('liquidity_sweep');
+    if (direction === 'BULLISH_IHS' && afterHead.some((b) => b.l < head.price * 0.999 && b.c > head.price)) smc.push('liquidity_sweep');
+    const last = bars[bars.length - 1];
+    if (!brokeNeckline(direction, last, neckline) && (direction === 'BEARISH_HS' ? last.c < last.o : last.c > last.o)) smc.push('order_block');
+    for (let k = bars.length - 10; k < bars.length - 2; k++) {
+      if (bars[k].h < bars[k + 2].l) { smc.push('fvg'); break; }
+      if (bars[k].l > bars[k + 2].h) { smc.push('fvg'); break; }
+    }
+    const factors = scoreSetup(
+      head.price, ls.price, rs.price, neckline, bars, ls.index, rs.index, smc, macroAligned, highImpactSoon,
+    );
+    const technical = factors.total;                       // 0..60
+    const learn = learnAdjust;                             // -25..+25 historical adjustment
+    const confidence = clampConfidence(55 + technical * 0.6 + learn);
+    const headMove = direction === 'BEARISH_HS' ? head.price - neckline : neckline - head.price;
+    const broke = brokeNeckline(direction, bars[bars.length - 1], neckline);
+    return {
+      pair, direction, status, neckline, head: head.price, leftShoulder: ls, rightShoulder: rs,
+      target: direction === 'BEARISH_HS'
+        ? (broke ? neckline - headMove : neckline - headMove * 0.75)
+        : (broke ? neckline + headMove : neckline + headMove * 0.75),
+      stopLoss: direction === 'BEARISH_HS' ? head.price * 1.002 : head.price * 0.998,
+      confidence, technicalScore: Math.round(technical), learnAdjust: Math.round(learn), smc,
+      detectedAt: new Date().toISOString(),
+    };
+  };
+
+  const brokeNeckline = (dir: 'BEARISH_HS' | 'BULLISH_IHS', bar: Bar, neckline: number) =>
+    dir === 'BEARISH_HS' ? bar.c < neckline : bar.c > neckline;
+
+  // ── bearish H&S
   for (let i = 0; i + 2 < highs.length; i++) {
-    const ls = highs[i], head = highs[i + 1], rs = highs[i + 2];
-    if (head.price > ls.price * 1.005 && head.price > rs.price * 1.005) {
-      const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.03;
+    const ls = highs[i], head = highs[i + 1];
+    for (let j = i + 2; j < highs.length; j++) {
+      const rs = highs[j];
+      if (head.price <= ls.price * 1.003 || head.price <= rs.price * 1.003) continue;
+      const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.045;
       if (!shoulderSym) continue;
-      // neckline: lowest low between LS→RS
-      const troughIdx = bars.slice(ls.index, rs.index + 1).reduce((m, b, k) => (b.l < bars[ls.index + m].l ? k : m), 0);
-      const neckline = bars[ls.index + troughIdx].l;
-      // right shoulder must hold above neckline
+      const between = bars.slice(ls.index, rs.index + 1);
+      const trough = between.reduce((m, b) => (b.l < m.l ? b : m), between[0]);
+      const neckline = trough.l;
       if (rs.price <= neckline) continue;
       const last = bars[bars.length - 1];
-      const broke = last.c < neckline;
-      const smc: string[] = [];
-      // liquidity sweep: price wicked above head then closed back under
-      const afterHead = bars.slice(head.index);
-      if (afterHead.some((b) => b.h > head.price * 1.001 && b.c < head.price)) smc.push('liquidity_sweep');
-      // order block: last opposite candle before breakout
-      if (!broke && last.c < last.o) smc.push('order_block');
-      // fair value gap: 3-candle gap in the last 10 bars
-      for (let k = bars.length - 10; k < bars.length - 2; k++) {
-        if (bars[k].h < bars[k + 2].l) { smc.push('fvg'); break; }
-      }
-      const headH = head.price - neckline;
-      return {
-        pair, direction: 'BEARISH_HS',
-        status: broke ? 'NECKLINE_BREAKOUT' : 'FORMING',
-        neckline, head: head.price, leftShoulder: ls, rightShoulder: rs,
-        target: broke ? neckline - headH : neckline - headH * 0.75,
-        stopLoss: head.price * 1.002,
-        confidence: learnScore, smc,
-        detectedAt: new Date().toISOString(),
-      };
+      const broke = brokeNeckline('BEARISH_HS', last, neckline);
+      const rsDeveloping = rs.index >= bars.length - 3;
+      const status: PatternSetup['status'] = broke ? 'NECKLINE_BREAKOUT' : rsDeveloping && relaxed ? 'EARLY_FORMING' : 'FORMING';
+      if (rsDeveloping && !relaxed && !broke) continue;
+      return build('BEARISH_HS', ls, head, rs, neckline, status);
     }
   }
 
   // ── bullish inverse H&S
   for (let i = 0; i + 2 < lows.length; i++) {
-    const ls = lows[i], head = lows[i + 1], rs = lows[i + 2];
-    if (head.price < ls.price * 0.995 && head.price < rs.price * 0.995) {
-      const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.03;
+    const ls = lows[i], head = lows[i + 1];
+    for (let j = i + 2; j < lows.length; j++) {
+      const rs = lows[j];
+      if (head.price >= ls.price * 0.997 || head.price >= rs.price * 0.997) continue;
+      const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.045;
       if (!shoulderSym) continue;
-      const peakIdx = bars.slice(ls.index, rs.index + 1).reduce((m, b, k) => (b.h > bars[ls.index + m].h ? k : m), 0);
-      const neckline = bars[ls.index + peakIdx].h;
+      const between = bars.slice(ls.index, rs.index + 1);
+      const peak = between.reduce((m, b) => (b.h > m.h ? b : m), between[0]);
+      const neckline = peak.h;
       if (rs.price >= neckline) continue;
       const last = bars[bars.length - 1];
-      const broke = last.c > neckline;
-      const smc: string[] = [];
-      const afterHead = bars.slice(head.index);
-      if (afterHead.some((b) => b.l < head.price * 0.999 && b.c > head.price)) smc.push('liquidity_sweep');
-      if (!broke && last.c > last.o) smc.push('order_block');
-      for (let k = bars.length - 10; k < bars.length - 2; k++) {
-        if (bars[k].l > bars[k + 2].h) { smc.push('fvg'); break; }
-      }
-      const headD = neckline - head.price;
-      return {
-        pair, direction: 'BULLISH_IHS',
-        status: broke ? 'NECKLINE_BREAKOUT' : 'FORMING',
-        neckline, head: head.price, leftShoulder: ls, rightShoulder: rs,
-        target: broke ? neckline + headD : neckline + headD * 0.75,
-        stopLoss: head.price * 0.998,
-        confidence: learnScore, smc,
-        detectedAt: new Date().toISOString(),
-      };
+      const broke = brokeNeckline('BULLISH_IHS', last, neckline);
+      const rsDeveloping = rs.index >= bars.length - 3;
+      const status: PatternSetup['status'] = broke ? 'NECKLINE_BREAKOUT' : rsDeveloping && relaxed ? 'EARLY_FORMING' : 'FORMING';
+      if (rsDeveloping && !relaxed && !broke) continue;
+      return build('BULLISH_IHS', ls, head, rs, neckline, status);
     }
   }
   return null;
 }
-
-export const MAJOR_PAIRS = ['EURUSD','GBPUSD','USDJPY','USDCHF','USDCAD','AUDUSD','NZDUSD'];
-export const MINOR_PAIRS = ['EURGBP','EURJPY','GBPJPY','AUDJPY','EURCHF','EURAUD','GBPAUD','XAUUSD'];
-export const ALL_PAIRS = [...MAJOR_PAIRS, ...MINOR_PAIRS];
-
-/** Yahoo Finance ticker mapping (same feed family the old bridge used). */
-export const TICKER: Record<string, string> = {
-  EURUSD: 'EURUSD=X', GBPUSD: 'GBPUSD=X', USDJPY: 'JPY=X', USDCHF: 'CHF=X',
-  USDCAD: 'CAD=X', AUDUSD: 'AUDUSD=X', NZDUSD: 'NZDUSD=X',
-  EURGBP: 'EURGBP=X', EURJPY: 'EURJPY=X', GBPJPY: 'GBPJPY=X', AUDJPY: 'AUDJPY=X',
-  EURCHF: 'EURCHF=X', EURAUD: 'EURAUD=X', GBPAUD: 'GBPAUD=X', XAUUSD: 'GC=F',
-};

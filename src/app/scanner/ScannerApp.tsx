@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 interface Setup {
   pair: string;
   direction: 'BEARISH_HS' | 'BULLISH_IHS';
-  status: 'FORMING' | 'NECKLINE_BREAKOUT';
+  status: 'FORMING' | 'EARLY_FORMING' | 'NECKLINE_BREAKOUT';
   neckline: number;
   head: number;
   target: number;
@@ -31,6 +31,7 @@ export default function ScannerApp() {
   const [selected, setSelected] = useState<Setup | null>(null);
   const [lastScan, setLastScan] = useState<string>('—');
   const chartDiv = useRef<HTMLDivElement | null>(null);
+  const [live, setLive] = useState(false);
 
   const scan = useCallback(async () => {
     try {
@@ -99,7 +100,37 @@ export default function ScannerApp() {
       series.createPriceLine({ price: selected.stopLoss, color: '#ef4444', lineWidth: 1, title: 'Stop Loss' });
       series.createPriceLine({ price: selected.target, color: '#10b981', lineWidth: 1, title: 'Take Profit' });
 
-      cleanup = () => chart.remove();
+      // ── LIVE polling loop: every 5s update the current H4 candle ──
+      let lastBarTime: number | null = bars.length > 0 ? Math.floor(bars[bars.length - 1].t / 1000) : null;
+      let lastClose: number | null = bars.length > 0 ? bars[bars.length - 1].c : null;
+      setLive(true);
+      const poll = async () => {
+        try {
+          const r = await fetch(`/api/scanner?pair=${selected.pair}&tick=1`, { cache: 'no-store' });
+          const d = await r.json();
+          const barsNow: Array<{ t: number; o: number; h: number; l: number; c: number }> = d.bars ?? [];
+          if (barsNow.length === 0) return;
+          const b = barsNow[barsNow.length - 1];
+          const t = Math.floor(b.t / 1000);
+          if (lastBarTime !== null && t === lastBarTime && lastClose !== null) {
+            // same H4 candle: update in place — it expands/shrinks with live price
+            series.update({ time: t, open: b.o, high: b.h, low: b.l, close: b.c });
+          } else {
+            // new H4 candle opened: append it
+            series.update({ time: t, open: b.o, high: b.h, low: b.l, close: b.c });
+            lastBarTime = t;
+          }
+          lastClose = b.c;
+        } catch { /* transient network blip — next poll retries */ }
+      };
+      const liveId = setInterval(poll, 5000);
+      void poll();
+
+      cleanup = () => {
+        clearInterval(liveId);
+        setLive(false);
+        chart.remove();
+      };
     })().catch(() => {});
 
     return () => {
@@ -155,8 +186,8 @@ export default function ScannerApp() {
               </div>
               <div className="mb-2 flex items-center justify-between text-xs">
                 <span className="text-slate-400">Status</span>
-                <span className={s.status === 'NECKLINE_BREAKOUT' ? 'font-semibold text-cyan-300' : 'text-slate-300'}>
-                  {s.status === 'NECKLINE_BREAKOUT' ? '⚡ Neckline Breakout' : 'Forming'}
+                <span className={s.status === 'NECKLINE_BREAKOUT' ? 'font-semibold text-cyan-300' : s.status === 'EARLY_FORMING' ? 'font-semibold text-amber-300' : 'text-slate-300'}>
+                  {s.status === 'NECKLINE_BREAKOUT' ? '⚡ Neckline Breakout' : s.status === 'EARLY_FORMING' ? '◌ Early Forming' : 'Forming'}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -184,7 +215,12 @@ export default function ScannerApp() {
                 <h2 className="text-base font-bold text-white">
                   {selected.pair} · {dirLabel(selected)} · {selected.status}
                 </h2>
-                <p className="text-xs text-slate-400">H4 candles · pattern geometry + SL/TP drawn · confidence {selected.confidence.toFixed(0)}%</p>
+                <p className="text-xs text-slate-400">
+                  H4 candles · pattern geometry + SL/TP drawn · confidence {selected.confidence.toFixed(0)}%
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 align-middle text-[9px] font-bold text-red-300">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" /> LIVE
+                  </span>
+                </p>
               </div>
               <button onClick={() => setSelected(null)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">
                 Close

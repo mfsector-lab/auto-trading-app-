@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ALL_PAIRS, TICKER, detectHeadShoulders, type Bar } from '@/lib/h4scanner';
+import { ALL_PAIRS, TICKER, detectHeadShouldersAll, type Bar } from '@/lib/h4scanner';
 import { dbConfigured, getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -94,24 +94,26 @@ async function seedBacktest(pair: string, bars: Bar[], direction: 'BEARISH_HS' |
     for (let cut = 200; cut >= 60; cut -= 20) {
       const window = bars.slice(0, bars.length - cut + 60 > bars.length ? bars.length : bars.length - cut + 60);
       if (window.length < 60) continue;
-      const setup = detectHeadShoulders(pair, window, 0, { relaxed: true });
-      if (!setup || setup.direction !== direction) continue;
-      // resolve forward from detection: did price reach target before stop within 30 H4 bars?
-      const from = Math.min(bars.length - 1, setup.rightShoulder.index + 30);
-      let outcome: string | null = null;
-      for (let i = setup.rightShoulder.index + 1; i <= from; i++) {
-        if (direction === 'BEARISH_HS') {
-          if (bars[i].l <= setup.target) { outcome = 'WIN'; break; }
-          if (bars[i].h >= setup.stopLoss) { outcome = 'LOSS'; break; }
-        } else {
-          if (bars[i].h >= setup.target) { outcome = 'WIN'; break; }
-          if (bars[i].l <= setup.stopLoss) { outcome = 'LOSS'; break; }
+      const setups = detectHeadShouldersAll(pair, window, 0, { relaxed: true });
+      for (const setup of setups) {
+        if (setup.direction !== direction) continue;
+        // resolve forward from detection: did price reach target before stop within 30 H4 bars?
+        const from = Math.min(bars.length - 1, setup.rightShoulder.index + 30);
+        let outcome: string | null = null;
+        for (let i = setup.rightShoulder.index + 1; i <= from; i++) {
+          if (direction === 'BEARISH_HS') {
+            if (bars[i].l <= setup.target) { outcome = 'WIN'; break; }
+            if (bars[i].h >= setup.stopLoss) { outcome = 'LOSS'; break; }
+          } else {
+            if (bars[i].h >= setup.target) { outcome = 'WIN'; break; }
+            if (bars[i].l <= setup.stopLoss) { outcome = 'LOSS'; break; }
+          }
         }
-      }
-      if (outcome) {
-        await sql`INSERT INTO h4_outcomes (pair, direction, outcome, source, detected_at)
-                  VALUES (${pair}, ${direction}, ${outcome}, 'backtest', now())`;
-        seeded++;
+        if (outcome) {
+          await sql`INSERT INTO h4_outcomes (pair, direction, outcome, source, detected_at)
+                    VALUES (${pair}, ${direction}, ${outcome}, 'backtest', now())`;
+          seeded++;
+        }
       }
     }
     return seeded;
@@ -150,17 +152,22 @@ export async function GET(request: NextRequest) {
       const bars = await fetchH4Cached(TICKER[pair] ?? pair);
       if (bars.length < 60) return null;
       const { aligned, soon } = await newsAlignment(pair, baseUrl);
-      const setup = detectHeadShoulders(pair, bars, 0, { relaxed: true, macroAligned: aligned, highImpactSoon: soon });
-      if (!setup) return null;
-      // startup historical backtest seed (200 H4 bars) so learning starts with real outcomes
-      const seeded = await seedBacktest(pair, bars, setup.direction);
-      const adjust = await learnAdjust(pair, setup.direction);
-      return { setup, adjust, seeded };
+      const setups = detectHeadShouldersAll(pair, bars, 0, { relaxed: true, macroAligned: aligned, highImpactSoon: soon });
+      if (setups.length === 0) return null;
+      // startup historical backtest seed + learning adjustment per direction
+      const out = [];
+      for (const setup of setups) {
+        await seedBacktest(pair, bars, setup.direction);
+        const adjust = await learnAdjust(pair, setup.direction);
+        out.push({ setup, adjust });
+      }
+      return out;
     })
   );
 
   const setups = results
     .filter((r): r is NonNullable<typeof r> => r !== null)
+    .flat()
     .map(({ setup, adjust }) => {
       // hybrid: clamp(technical base 55.., + learn adjust)
       const raw = setup.confidence + adjust;

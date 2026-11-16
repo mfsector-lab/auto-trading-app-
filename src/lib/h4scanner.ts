@@ -111,16 +111,17 @@ export function clampConfidence(raw: number): number {
  * Detect H&S (bearish) / Inverse H&S (bullish).
  * `relaxed`: also accept EARLY_FORMING (RS still developing near the neckline).
  */
-export function detectHeadShoulders(
+export function detectHeadShouldersAll(
   pair: string,
   bars: Bar[],
   learnAdjust = 0,
   opts?: { relaxed?: boolean; macroAligned?: boolean; highImpactSoon?: boolean },
-): PatternSetup | null {
+): PatternSetup[] {
   const relaxed = opts?.relaxed ?? true;
   const macroAligned = opts?.macroAligned ?? false;
   const highImpactSoon = opts?.highImpactSoon ?? false;
-  if (bars.length < 60) return null;
+  if (bars.length < 60) return [];
+  const found: PatternSetup[] = [];
 
   const allPivots = findPivots(bars, 3, 3);
   const highs = allPivots.filter((p) => p.price >= bars[p.index].h);
@@ -179,7 +180,8 @@ export function detectHeadShoulders(
       const rsDeveloping = rs.index >= bars.length - 3;
       const status: PatternSetup['status'] = broke ? 'NECKLINE_BREAKOUT' : rsDeveloping && relaxed ? 'EARLY_FORMING' : 'FORMING';
       if (rsDeveloping && !relaxed && !broke) continue;
-      return build('BEARISH_HS', ls, head, rs, neckline, status);
+      found.push(build('BEARISH_HS', ls, head, rs, neckline, status));
+      break; // one pattern per direction per pair scan
     }
   }
 
@@ -200,8 +202,9 @@ export function detectHeadShoulders(
       const rsDeveloping = rs.index >= bars.length - 3;
       const status: PatternSetup['status'] = broke ? 'NECKLINE_BREAKOUT' : rsDeveloping && relaxed ? 'EARLY_FORMING' : 'FORMING';
       if (rsDeveloping && !relaxed && !broke) continue;
-      return build('BULLISH_IHS', ls, head, rs, neckline, status);
+      found.push(build('BULLISH_IHS', ls, head, rs, neckline, status));
+      break;
     }
   }
-  return null;
+  return found;
 }

@@ -32,6 +32,7 @@ export default function ScannerApp() {
   const [lastScan, setLastScan] = useState<string>('—');
   const chartDiv = useRef<HTMLDivElement | null>(null);
   const [live, setLive] = useState(false);
+  const [dirFilter, setDirFilter] = useState<'ALL' | 'BEARISH_HS' | 'BULLISH_IHS'>('ALL');
 
   const scan = useCallback(async () => {
     try {
@@ -157,16 +158,28 @@ export default function ScannerApp() {
         </div>
       </div>
 
+      <div className="mb-3 flex flex-wrap gap-2">
+        {([['ALL', 'All Setups'], ['BEARISH_HS', 'Bearish H&S ▼'], ['BULLISH_IHS', 'Inverse H&S ▲']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setDirFilter(k)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${dirFilter === k ? 'border-violet-400/40 bg-violet-500/15 text-violet-200' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'}`}>
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto self-center text-[11px] text-slate-500">
+          {setups.filter((s) => dirFilter === 'ALL' || s.direction === dirFilter).length} showing
+        </span>
+      </div>
+
       {loading ? (
         <p className="py-16 text-center text-sm text-slate-400">Scanning H4 patterns…</p>
       ) : setups.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-10 text-center">
-          <p className="text-sm text-slate-300">No Head &amp; Shoulders setups forming right now.</p>
+          <p className="text-sm text-slate-300">No setups matching this filter right now — both Bearish H&S and Inverse H&S are scanned every 60 seconds.</p>
           <p className="mt-1 text-xs text-slate-500">The scanner re-checks every 60 seconds across all pairs.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {setups.map((s) => (
+          {setups.filter((s) => dirFilter === 'ALL' || s.direction === dirFilter).map((s) => (
             <button
               key={`${s.pair}-${s.direction}-${s.detectedAt}`}
               onClick={() => setSelected(s)}

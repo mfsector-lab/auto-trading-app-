@@ -165,16 +165,22 @@ export async function GET(request: NextRequest) {
     })
   );
 
-  const setups = results
+  const all = results
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .flat()
     .map(({ setup, adjust }) => {
-      // hybrid: clamp(technical base 55.., + learn adjust)
       const raw = setup.confidence + adjust;
       const confidence = Math.max(55, Math.min(95, Math.round(raw)));
       return { ...setup, confidence, learnAdjust: Math.round(adjust) };
-    })
-    .sort((a, b) => b.confidence - a.confidence); // strongest first
+    });
+  // dedupe: one best setup per pair+direction (keep highest confidence)
+  const best = new Map<string, (typeof all)[number]>();
+  for (const s of all) {
+    const key = `${s.pair}|${s.direction}`;
+    const prev = best.get(key);
+    if (!prev || s.confidence > prev.confidence) best.set(key, s);
+  }
+  const setups = Array.from(best.values()).sort((a, b) => b.confidence - a.confidence);
 
   // persist current setups for the dashboard + learning tracking
   if (dbConfigured() && setups.length > 0) {

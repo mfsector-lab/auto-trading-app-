@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Dark Venus Auto Bot',
     short_name: 'Venus Bot',
-    description: 'Dark Venus Auto Bot dashboard with broker connection profiles, MT4/MT5 execution bridge, and live trading controls.',
+    description: 'Dark Venus Auto Bot dashboard with broker connection profiles,  execution , and live trading controls.',
     start_url: '/',
     display: 'standalone',
     background_color: '#070b17',

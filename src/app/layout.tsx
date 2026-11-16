@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Dark Venus Auto Bot",
-  description: "Dark Venus Auto Bot dashboard with broker connection profiles, MT4/MT5 execution bridge, and real-time trading controls.",
+  description: "Dark Venus Auto Bot dashboard with broker connection profiles,  execution , and real-time trading controls.",
   manifest: "/manifest.webmanifest",
   applicationName: "Dark Venus Auto Bot",
   icons: {

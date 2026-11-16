@@ -2,17 +2,12 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Download, Menu, X } from 'lucide-react';
-import OAuthCatcher from '@/components/deriv/OAuthCatcher';
+import { Menu, X } from 'lucide-react';
 
 const links = [
   { href: '/', label: 'Dashboard' },
-  { href: '/bridge', label: 'MT4/MT5 Bridge' },
-  { href: '/deriv', label: 'Deriv Digits' },
-  { href: '/bots', label: 'AI Bots' },
-  { href: '/sygnal', label: 'Sygnal' },
-  { href: '/art', label: 'Art Platform' },
-  { href: '/download', label: 'Download' },
+  { href: '/scanner', label: 'H4 Scanner' },
+  { href: '/macro-feed', label: 'Macro & News' },
   { href: '/settings', label: 'Settings' },
   { href: '/privacy', label: 'Privacy' },
   { href: '/join', label: 'Join' },
@@ -27,20 +22,15 @@ export default function Nav() {
   }, []);
 
   return (
-    <>
-    <OAuthCatcher />
     <header className="sticky top-0 z-40 border-b border-violet-500/20 bg-slate-950/85 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-sm font-bold tracking-[0.18em] text-white uppercase">
-            Dark Venus Auto Bot
+            Dark Venus · H4 Scanner
           </Link>
-          <span className="hidden items-center gap-1 rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-1 text-[10px] font-semibold text-violet-200 sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
-            Auto Bot Active
-          </span>
-          <span className="hidden items-center gap-1 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-200 lg:inline-flex">
-            Broker Sync
+          <span className="hidden items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-200 sm:inline-flex">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            H4 SCANNER ENGINE: LIVE
           </span>
         </div>
 
@@ -50,14 +40,6 @@ export default function Nav() {
               {link.label}
             </Link>
           ))}
-          <a
-            href="/TradeAutomate-EA.mq4"
-            download="TradeAutomate_Bridge.mq4"
-            className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-white hover:bg-violet-500"
-          >
-            <Download size={12} />
-            EA
-          </a>
         </nav>
 
         <button
@@ -71,23 +53,15 @@ export default function Nav() {
 
       {open && (
         <div className="border-t border-violet-500/20 bg-slate-950 px-4 py-3 md:hidden">
-          <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-1 text-[10px] font-semibold text-violet-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
-            Auto Bot Active
-          </div>
           <div className="flex flex-col gap-2 text-sm font-medium text-slate-200">
             {links.map((link) => (
               <Link key={link.href} href={link.href} onClick={() => setOpen(false)} className="rounded-lg px-2 py-1 hover:bg-slate-800">
                 {link.label}
               </Link>
             ))}
-            <a href="/TradeAutomate-EA.mq4" download="TradeAutomate_Bridge.mq4" className="rounded-lg px-2 py-1 hover:bg-slate-800" onClick={() => setOpen(false)}>
-              Download EA
-            </a>
           </div>
         </div>
       )}
     </header>
-    </>
   );
 }

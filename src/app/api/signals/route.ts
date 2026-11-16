@@ -119,7 +119,6 @@ export type AiLearningStats = {
 type ClientSignalState = {
   lastSignalByMode: Map<string, SignalPayload>;
   lastCardSignal: SignalPayload | null;
-  closeAllAt: string | null;
   lastGlobalSignal: SignalPayload | null;
   lastTerminalStatus: TerminalStatus | null;
   lastExecutionStatus: ExecutionStatus | null;
@@ -136,7 +135,6 @@ let schemaReady = false;
 function snapshotState(state: ClientSignalState): Record<string, unknown> {
   return {
     lastCardSignal: state.lastCardSignal,
-    closeAllAt: state.closeAllAt,
     lastGlobalSignal: state.lastGlobalSignal,
     lastTerminalStatus: state.lastTerminalStatus,
     lastExecutionStatus: state.lastExecutionStatus,
@@ -147,7 +145,7 @@ function snapshotState(state: ClientSignalState): Record<string, unknown> {
 }
 
 function restoreState(state: ClientSignalState, snap: Record<string, unknown>): void {
-  for (const k of ['lastCardSignal','closeAllAt','lastGlobalSignal','lastTerminalStatus','lastExecutionStatus','lastRejectionStatus'] as const) {
+  for (const k of ['lastCardSignal','lastGlobalSignal','lastTerminalStatus','lastExecutionStatus','lastRejectionStatus'] as const) {
     const v = snap[k];
     if (v !== undefined && v !== null) (state as unknown as Record<string, unknown>)[k] = v;
   }
@@ -189,7 +187,6 @@ function getClientSignalState(clientId: string): ClientSignalState {
   state = {
     lastSignalByMode: new Map<string, SignalPayload>(),
     lastCardSignal: null,
-  closeAllAt: null,
   lastGlobalSignal: null,
     lastTerminalStatus: null,
     lastExecutionStatus: null,
@@ -432,7 +429,7 @@ export async function GET(request: NextRequest) {
 
     const effectiveVersion = queryEaVersion
       || state.lastTerminalStatus?.ea_version
-      || (queryPlatform === 'MT5' ? 'v1.20-mt5' : 'v1.10');
+     ;
 
     state.lastTerminalStatus = {
       account_mode: normalizedMode,
@@ -460,7 +457,6 @@ export async function GET(request: NextRequest) {
         open_trades: state.lastOpenTradesStatus,
         queued_signal: state.lastGlobalSignal,
       card_signal: state.lastCardSignal,
-      close_all: state.closeAllAt !== null && (Date.now() - new Date(state.closeAllAt).getTime()) < 120000,
         ai_stats: state.aiStats,
       },
       {
@@ -740,10 +736,7 @@ export async function POST(request: NextRequest) {
   if (payload.action === 'BUY' || payload.action === 'SELL') {
     state.lastCardSignal = payload;
   }
-  const closeAll = (body as { close_all?: boolean }).close_all === true;
-  if (closeAll) {
-    state.closeAllAt = new Date().toISOString();
-  }
+
   state.lastSignalByMode.set(mode, payload);
   state.lastGlobalSignal = payload;
   if (payload.action === 'BUY' || payload.action === 'SELL' || payload.strategy_mode) {

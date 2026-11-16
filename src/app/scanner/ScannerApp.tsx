@@ -153,8 +153,11 @@ export default function ScannerApp() {
           </p>
         </div>
         <div className="text-right text-xs text-slate-400">
-          <p>Scanning {PAIRS.length} pairs</p>
-          <p>Last scan: {lastScan}</p>
+          <p>Scanning {PAIRS.length} pairs · both patterns</p>
+          <p className="flex items-center justify-end gap-1">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            Live · updated {lastScan}
+          </p>
         </div>
       </div>
 

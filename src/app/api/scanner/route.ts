@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
   }
   const setups = Array.from(best.values()).sort((a, b) => b.confidence - a.confidence);
 
-  // persist current setups for the dashboard + learning tracking
+  // persist current setups + SELF-LEARNING LOOP: resolve past setups against live price
   if (dbConfigured() && setups.length > 0) {
     try {
       const sql = await getDb();
@@ -199,6 +199,26 @@ export async function GET(request: NextRequest) {
                     VALUES (${s.pair}, ${s.direction}, ${s.status}, ${s.neckline}, ${s.head},
                             ${s.target}, ${s.stopLoss}, ${s.confidence}, ${s.smc})`;
         }
+
+        // LEARNING LOOP — resolve open breakout setups: fetch latest price per pair once,
+        // compare against each unresolved setup's target/stop, record WIN/LOSS.
+        const open = (await sql`
+          SELECT DISTINCT ON (pair, direction) id, pair, direction, target, stop_loss
+          FROM h4_setups
+          WHERE status = 'NECKLINE_BREAKOUT'
+            AND id NOT IN (SELECT setup_ref FROM h4_outcomes WHERE setup_ref IS NOT NULL)
+          ORDER BY pair, direction, detected_at DESC`) as Array<{ id: number; pair: string; direction: string; target: number; stop_loss: number }>;
+        for (const o of open) {
+          const bars = await fetchH4Cached(TICKER[o.pair] ?? o.pair);
+          if (bars.length === 0) continue;
+          const last = bars[bars.length - 1].c;
+          const win = o.direction === 'BEARISH_HS' ? last <= o.target : last >= o.target;
+          const loss = o.direction === 'BEARISH_HS' ? last >= o.stop_loss : last <= o.stop_loss;
+          if (win || loss) {
+            await sql`INSERT INTO h4_outcomes (pair, direction, outcome, source, setup_ref)
+                      VALUES (${o.pair}, ${o.direction}, ${win ? 'WIN' : 'LOSS'}, 'live', ${o.id})`;
+          }
+        }
       }
     } catch {
       /* non-fatal */
@@ -210,8 +230,50 @@ export async function GET(request: NextRequest) {
     barsPayload = await fetchH4Cached(TICKER[requested] ?? requested);
   }
 
+  // ── LIVE Macro Trend Lock: derived from the same real H4 bars the scanner uses ──
+  const macroBias = await Promise.all(
+    pairs.map(async (pair) => {
+      const bars = await fetchH4Cached(TICKER[pair] ?? pair);
+      if (bars.length < 220) return null;
+      const closes = bars.map((b) => b.c);
+      const n = closes.length;
+      // H4 swing structure over the last ~60 bars: count higher-highs/lows vs lower
+      const recent = bars.slice(-15);
+      let hh = 0, hl = 0, lh = 0, ll = 0;
+      for (let i = 1; i < recent.length; i++) {
+        if (recent[i].h > recent[i - 1].h) hh++; else if (recent[i].h < recent[i - 1].h) lh++;
+        if (recent[i].l > recent[i - 1].l) hl++; else if (recent[i].l < recent[i - 1].l) ll++;
+      }
+      // EMA200 side
+      const k = 2 / (200 + 1);
+      let ema = closes[Math.max(0, n - 200)];
+      for (let i = Math.max(1, n - 200); i < n; i++) ema = closes[i] * k + ema * (1 - k);
+      const above = closes[n - 1] > ema;
+      // 5-hour drift (bars[-6] → bars[-1])
+      const drift = ((closes[n - 1] - closes[n - 6]) / Math.max(1e-12, closes[n - 6])) * 100;
+      // structure health 0..100: blend structure agreement + EMA agreement + drift strength
+      const bullStruct = hh >= lh && hl >= ll;
+      const bearStruct = lh >= hh && ll >= hl;
+      const emaAgree = above === (drift >= 0);
+      const health = Math.round(Math.min(100, 40 * (bullStruct || bearStruct ? 1 : 0.35) + (emaAgree ? 35 : 10) + Math.min(25, Math.abs(drift) * 6)));
+      const bias = bullStruct && above ? 'BULLISH' : bearStruct && !above ? 'BEARISH' : bullStruct ? 'BULLISH' : bearStruct ? 'BEARISH' : 'NEUTRAL';
+      const note = bias === 'BULLISH'
+        ? 'Higher highs & higher lows confirmed on H4'
+        : bias === 'BEARISH'
+          ? 'Lower highs into H4 supply'
+          : 'Range-bound — H&S setups allowed both ways';
+      // counter-trend filter: count bearish setups on a BULLISH-bias pair and vice versa
+      const counter = setups.filter(
+        (s) => s.pair === pair &&
+          ((bias === 'BULLISH' && s.direction === 'BEARISH_HS') || (bias === 'BEARISH' && s.direction === 'BULLISH_IHS')),
+      ).length;
+      return { pair, bias, health, note, counterFiltered: counter, drift: +drift.toFixed(2) };
+    }),
+  );
+  const macro = macroBias.filter(Boolean);
+
   return NextResponse.json(
-    { ok: true, scanned: pairs.length, setups, bars: barsPayload, generatedAt: new Date().toISOString() },
+    { ok: true, scanned: pairs.length, setups, bars: barsPayload, macro, generatedAt: new Date().toISOString() },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }

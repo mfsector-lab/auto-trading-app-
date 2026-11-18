@@ -10,17 +10,11 @@ interface EcoEvent {
   pairs: string[]; released: boolean; minutesUntil: number;
 }
 
-const MACRO_BIAS = [
-  { pair: 'XAU/USD', bias: 'BULLISH', health: 91, note: 'Higher Highs & Higher Lows confirmed', filtered: 3 },
-  { pair: 'EUR/USD', bias: 'BEARISH', health: 74, note: 'Lower highs into weekly supply', filtered: 1 },
-  { pair: 'GBP/USD', bias: 'NEUTRAL', health: 58, note: 'Range-bound — H&S setups allowed both ways', filtered: 0 },
-  { pair: 'USD/JPY', bias: 'BULLISH', health: 69, note: 'Intervention risk flagged — reduce size', filtered: 2 },
-  { pair: 'AUD/USD', bias: 'BEARISH', health: 63, note: 'Commodity softness, COT shorts building', filtered: 1 },
-];
 
 export default function MacroApp() {
   const [events, setEvents] = useState<EcoEvent[]>([]);
   const [next, setNext] = useState<EcoEvent | null>(null);
+  const [macro, setMacro] = useState<Array<{ pair: string; bias: string; health: number; note: string; counterFiltered: number; drift: number }>>([]);
   const [now, setNow] = useState(() => Date.now());
 
   // 24/7: event list refresh every 30s, countdown ticks every 1s
@@ -31,6 +25,11 @@ export default function MacroApp() {
         const d = await r.json();
         setEvents(d.events ?? []);
         setNext(d.nextHighImpact ?? null);
+      } catch { /* keep */ }
+      try {
+        const r2 = await fetch('/api/scanner', { cache: 'no-store' });
+        const d2 = await r2.json();
+        setMacro(d2.macro ?? []);
       } catch { /* keep */ }
     };
     load();
@@ -122,7 +121,7 @@ export default function MacroApp() {
           <h2 className="mb-2 text-sm font-bold text-white">🔒 Macro Trend Lock</h2>
           <p className="mb-2 text-[11px] text-slate-400">Active institutional bias — counter-trend H&amp;S setups filtered unless confirmed by structure + COT shift.</p>
           <div className="space-y-2">
-            {MACRO_BIAS.map((m) => (
+            {macro.map((m) => (
               <div key={m.pair} className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white">{m.pair}</span>
@@ -137,15 +136,15 @@ export default function MacroApp() {
                   </div>
                   <span className="text-[10px] text-slate-400">{m.health}/100</span>
                 </div>
-                {m.filtered > 0 && (
-                  <p className="mt-1 text-[10px] text-amber-300/80">🔒 {m.filtered} counter-trend H&S signal{m.filtered > 1 ? 's' : ''} filtered</p>
+                {m.counterFiltered > 0 && (
+                  <p className="mt-1 text-[10px] text-amber-300/80">🔒 {m.counterFiltered} counter-trend H&S signal{m.counterFiltered > 1 ? 's' : ''} filtered</p>
                 )}
               </div>
             ))}
           </div>
           <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">COT Positioning Shift</p>
-            <p className="mt-1 text-[11px] text-slate-300">Institutional USD shorts building for 3 weeks · Gold longs near highs · JPY longs unwinding</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">COT Positioning Shift <span className="ml-1 text-[9px] text-slate-600">CFTC weekly</span></p>
+            <p className="mt-1 text-[11px] text-slate-300">Weekly CFTC COT report (published Fridays) — latest positioning summary on the COT Data History tab; refreshes each report release</p>
           </div>
         </div>
       </div>

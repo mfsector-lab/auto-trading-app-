@@ -118,8 +118,8 @@ export default function MacroApp() {
 
         {/* Macro Trend Lock + Smart Money confluence */}
         <div className="nexa-panel p-3">
-          <h2 className="mb-2 text-sm font-bold text-white">🔒 Macro Trend Lock</h2>
-          <p className="mb-2 text-[11px] text-slate-400">Active institutional bias — counter-trend H&amp;S setups filtered unless confirmed by structure + COT shift.</p>
+          <h2 className="mb-2 text-sm font-bold text-white">🔒 Macro Trend Lock <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">LIVE</span></h2>
+          <p className="mb-2 text-[11px] text-slate-400">Bias computed from live H4 structure (HH/HL vs LH/LL), EMA200 side and drift — updates every 30s with the scan. Counter-trend H&amp;S setups filtered automatically.</p>
           <div className="space-y-2">
             {macro.map((m) => (
               <div key={m.pair} className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">

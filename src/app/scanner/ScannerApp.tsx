@@ -33,6 +33,7 @@ export default function ScannerApp() {
   const chartDiv = useRef<HTMLDivElement | null>(null);
   const [live, setLive] = useState(false);
   const [dirFilter, setDirFilter] = useState<'ALL' | 'BEARISH_HS' | 'BULLISH_IHS'>('ALL');
+  const [search, setSearch] = useState('');
 
   const scan = useCallback(async () => {
     try {
@@ -161,7 +162,13 @@ export default function ScannerApp() {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search market — e.g. XAUUSD, GBPJPY, sweep…"
+          className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/30 sm:max-w-xs"
+        />
         {([['ALL', 'All Setups'], ['BEARISH_HS', 'Bearish H&S ▼'], ['BULLISH_IHS', 'Inverse H&S ▲']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setDirFilter(k)}
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${dirFilter === k ? 'border-violet-400/40 bg-violet-500/15 text-violet-200' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'}`}>
@@ -169,7 +176,7 @@ export default function ScannerApp() {
           </button>
         ))}
         <span className="ml-auto self-center text-[11px] text-slate-500">
-          {setups.filter((s) => dirFilter === 'ALL' || s.direction === dirFilter).length} showing
+          {setups.filter((s) => (dirFilter === 'ALL' || s.direction === dirFilter) && (!search.trim() || [s.pair, s.status, ...(s.smc ?? [])].join(' ').toUpperCase().includes(search.trim().toUpperCase()))).length} showing
         </span>
       </div>
 
@@ -182,7 +189,16 @@ export default function ScannerApp() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {setups.filter((s) => dirFilter === 'ALL' || s.direction === dirFilter).map((s) => (
+          {setups
+            .filter((s) => dirFilter === 'ALL' || s.direction === dirFilter)
+            .filter((s) => {
+              if (!search.trim()) return true;
+              const q = search.trim().toUpperCase();
+              const dirName = s.direction === 'BEARISH_HS' ? 'BEARISH HEAD SHOULDERS' : 'INVERSE HEAD SHOULDERS';
+              const hay = [s.pair, dirName, s.status, ...(s.smc ?? [])].join(' ').toUpperCase();
+              return hay.includes(q);
+            })
+            .map((s) => (
             <button
               key={`${s.pair}-${s.direction}-${s.detectedAt}`}
               onClick={() => setSelected(s)}

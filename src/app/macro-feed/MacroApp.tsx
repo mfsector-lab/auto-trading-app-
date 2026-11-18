@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import MacroTabs from '@/components/MacroTabs';
 
 interface EcoEvent {
   date: string; time: string; name: string; currency: string;
@@ -8,8 +9,6 @@ interface EcoEvent {
   forecast: string | null; previous: string | null; actual: string | null;
   pairs: string[]; released: boolean; minutesUntil: number;
 }
-
-const SUBTABS = ['US Economic Heatmap', 'COT Data History', 'Scorecard', 'Standings'] as const;
 
 const MACRO_BIAS = [
   { pair: 'XAU/USD', bias: 'BULLISH', health: 91, note: 'Higher Highs & Higher Lows confirmed', filtered: 3 },
@@ -22,7 +21,6 @@ const MACRO_BIAS = [
 export default function MacroApp() {
   const [events, setEvents] = useState<EcoEvent[]>([]);
   const [next, setNext] = useState<EcoEvent | null>(null);
-  const [tab, setTab] = useState<(typeof SUBTABS)[number]>('US Economic Heatmap');
   const [now, setNow] = useState(() => Date.now());
 
   // 24/7: event list refresh every 30s, countdown ticks every 1s
@@ -66,18 +64,9 @@ export default function MacroApp() {
       </div>
 
       {/* sub-navigation preserved */}
-      <div className="mb-3 flex flex-wrap gap-2">
-        {SUBTABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${tab === t ? 'border-violet-400/40 bg-violet-500/15 text-violet-200' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'}`}>
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* 24/7 high-impact alert banner with live countdown */}
+      <MacroTabs active="/macro-feed" />{/* 24/7 high-impact alert banner with live countdown */}
       {next && (
-        <div className="mb-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
+        <div className="nexa-panel mb-3 border-red-500/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-red-300">⚠ HIGH-IMPACT EVENT APPROACHING — SPREAD RISK ACTIVE</p>
@@ -96,7 +85,7 @@ export default function MacroApp() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {/* Tier-1 calendar (auto-updating 24/7) */}
-        <div className="lg:col-span-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+        <div className="lg:col-span-2 nexa-panel p-3">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-bold text-white">Economic Calendar — Tier 1 Events</h2>
             <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300">
@@ -129,7 +118,7 @@ export default function MacroApp() {
         </div>
 
         {/* Macro Trend Lock + Smart Money confluence */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+        <div className="nexa-panel p-3">
           <h2 className="mb-2 text-sm font-bold text-white">🔒 Macro Trend Lock</h2>
           <p className="mb-2 text-[11px] text-slate-400">Active institutional bias — counter-trend H&amp;S setups filtered unless confirmed by structure + COT shift.</p>
           <div className="space-y-2">
@@ -161,13 +150,6 @@ export default function MacroApp() {
         </div>
       </div>
 
-      {tab !== 'US Economic Heatmap' && (
-        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <p className="text-xs text-slate-400">
-            {tab} view — data module reserved. The calendar, macro lock and H4 scanner link above are live.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

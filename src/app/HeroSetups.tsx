@@ -77,7 +77,7 @@ function MarketWidget({ s, rank }: { s: Setup; rank: number }) {
   const up = pct >= 0;
 
   return (
-    <div className="relative rounded-2xl border border-white/10 bg-[#0b1120]/70 p-5 backdrop-blur-xl"
+    <div className="relative rounded-2xl border border-white/10 bg-[#0b1120]/80 p-5 backdrop-blur-xl"
          style={{ boxShadow: '0 0 40px rgba(59,130,246,0.12), 0 20px 50px rgba(2,6,23,0.7)' }}>
       {/* header */}
       <div className="mb-4 flex items-center justify-between">
@@ -164,9 +164,18 @@ export default function HeroSetups() {
   const top = setups.slice(0, 2);
 
   return (
-    <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <section
+      className="relative grid grid-cols-1 gap-6 rounded-2xl border border-blue-500/20 p-4 lg:grid-cols-2 lg:p-6"
+      style={{
+        backgroundImage: 'url(/command-center-bg.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed',
+      }}
+    >
+      <div aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-[#04060f]/60" />
       {/* LEFT: headline column */}
-      <div className="flex flex-col justify-center">
+      <div className="relative z-10 flex flex-col justify-center">
         <span className="mb-3 inline-flex w-fit items-center rounded-full border border-blue-400/40 bg-blue-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-300">
           Powered by advanced AI
         </span>
@@ -197,7 +206,7 @@ export default function HeroSetups() {
       </div>
 
       {/* RIGHT: the two market widgets */}
-      <div className="grid grid-cols-1 gap-5">
+      <div className="relative z-10 grid grid-cols-1 gap-5">
         {loading ? (
           [0, 1].map((i) => (
             <div key={i} className="h-[340px] animate-pulse rounded-2xl border border-white/10 bg-[#0b1120]/70" />

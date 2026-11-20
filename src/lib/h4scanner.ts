@@ -120,6 +120,10 @@ export function detectHeadShouldersAll(
   const relaxed = opts?.relaxed ?? true;
   const macroAligned = opts?.macroAligned ?? false;
   const highImpactSoon = opts?.highImpactSoon ?? false;
+  // Only scan the RECENT window (last 120 H4 bars ≈ 20 days) so detected geometry
+  // reflects the current market, not price levels from months ago.
+  const scanBars = bars.length > 120 ? bars.slice(-120) : bars;
+  bars = scanBars;
   if (bars.length < 60) return [];
   const found: PatternSetup[] = [];
 

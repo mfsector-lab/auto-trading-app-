@@ -175,6 +175,8 @@ export function detectHeadShouldersAll(
       if (head.price <= ls.price * 1.003 || head.price <= rs.price * 1.003) continue;
       const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.045;
       if (!shoulderSym) continue;
+      // temporal integrity: LS must occur BEFORE the Head, Head BEFORE the RS
+      if (!(ls.t < head.t && head.t < rs.t)) continue;
       const between = bars.slice(ls.index, rs.index + 1);
       const trough = between.reduce((m, b) => (b.l < m.l ? b : m), between[0]);
       const neckline = trough.l;
@@ -197,6 +199,8 @@ export function detectHeadShouldersAll(
       if (head.price >= ls.price * 0.997 || head.price >= rs.price * 0.997) continue;
       const shoulderSym = Math.abs(rs.price - ls.price) / head.price < 0.045;
       if (!shoulderSym) continue;
+      // temporal integrity: LS must occur BEFORE the Head, Head BEFORE the RS
+      if (!(ls.t < head.t && head.t < rs.t)) continue;
       const between = bars.slice(ls.index, rs.index + 1);
       const peak = between.reduce((m, b) => (b.h > m.h ? b : m), between[0]);
       const neckline = peak.h;

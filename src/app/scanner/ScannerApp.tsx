@@ -6,6 +6,8 @@ interface Setup {
   pair: string;
   direction: 'BEARISH_HS' | 'BULLISH_IHS';
   status: 'FORMING' | 'EARLY_FORMING' | 'NECKLINE_BREAKOUT';
+  breakoutAgeHours?: number | null;
+  stale?: boolean;
   neckline: number;
   head: number;
   target: number;
@@ -218,8 +220,8 @@ export default function ScannerApp() {
               </div>
               <div className="mb-2 flex items-center justify-between text-xs">
                 <span className="text-slate-400">Status</span>
-                <span className={s.status === 'NECKLINE_BREAKOUT' ? 'font-semibold text-cyan-300' : s.status === 'EARLY_FORMING' ? 'font-semibold text-amber-300' : 'text-slate-300'}>
-                  {s.status === 'NECKLINE_BREAKOUT' ? '⚡ Neckline Breakout' : s.status === 'EARLY_FORMING' ? '◌ Early Forming' : 'Forming'}
+                <span className={s.stale ? 'font-semibold text-slate-500' : s.status === 'NECKLINE_BREAKOUT' ? 'font-semibold text-cyan-300' : s.status === 'EARLY_FORMING' ? 'font-semibold text-amber-300' : 'text-slate-300'}>
+                  {s.stale ? '⏸ Stale breakout' : s.status === 'NECKLINE_BREAKOUT' ? '⚡ Neckline Breakout' : s.status === 'EARLY_FORMING' ? '◌ Early Forming' : 'Forming'}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1">

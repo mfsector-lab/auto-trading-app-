@@ -159,7 +159,14 @@ export async function GET(request: NextRequest) {
       for (const setup of setups) {
         await seedBacktest(pair, bars, setup.direction);
         const adjust = await learnAdjust(pair, setup.direction);
-        out.push({ setup, adjust });
+        // breakout freshness: bars since price first closed past the neckline (within last 40 bars)
+        let ageBars: number | null = null;
+        for (let i = Math.max(1, bars.length - 40); i < bars.length; i++) {
+          if (setup.direction === 'BEARISH_HS' && bars[i].c < setup.neckline) { ageBars = bars.length - 1 - i; break; }
+          if (setup.direction === 'BULLISH_IHS' && bars[i].c > setup.neckline) { ageBars = bars.length - 1 - i; break; }
+        }
+        const ageHours = ageBars !== null ? ageBars * 4 : null;
+        out.push({ setup, adjust, ageHours });
       }
       return out;
     })
@@ -168,10 +175,12 @@ export async function GET(request: NextRequest) {
   const all = results
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .flat()
-    .map(({ setup, adjust }) => {
+    .map(({ setup, adjust, ageHours }) => {
       const raw = setup.confidence + adjust;
       const confidence = Math.max(55, Math.min(95, Math.round(raw)));
-      return { ...setup, confidence, learnAdjust: Math.round(adjust) };
+      // stale breakouts (>48h) flagged so the UI never presents them as live entries
+      const stale = ageHours !== null && ageHours > 48;
+      return { ...setup, confidence, learnAdjust: Math.round(adjust), breakoutAgeHours: ageHours, stale };
     });
   // dedupe: one best setup per pair+direction (keep highest confidence)
   const best = new Map<string, (typeof all)[number]>();

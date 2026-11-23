@@ -9,13 +9,21 @@ interface Setup {
   technicalScore: number; learnAdjust: number; smc: string[];
 }
 
+interface LearnStats { totals: { wins: number; losses: number; winRate: number | null }; bySource: Array<{ source: string; outcome: string; n: number }> }
+
 export default function ScorecardPage() {
   const [setups, setSetups] = useState<Setup[]>([]);
+  const [learn, setLearn] = useState<LearnStats | null>(null);
   useEffect(() => {
     const load = async () => {
       const r = await fetch('/api/scanner', { cache: 'no-store' });
       const d = await r.json();
       setSetups(d.setups ?? []);
+      try {
+        const r2 = await fetch('/api/learning-stats', { cache: 'no-store' });
+        const d2 = await r2.json();
+        if (d2.configured) setLearn(d2);
+      } catch { /* keep */ }
     };
     load();
     const id = setInterval(load, 60_000);
@@ -29,7 +37,24 @@ export default function ScorecardPage() {
         <MacroTabs active="/macro/scorecard" />
         <h1 className="text-lg font-bold text-white nexa-glow-text">Setup Scorecard</h1>
         <p className="mb-4 text-xs text-slate-400">Component breakdown of the hybrid confidence score for every live H4 setup — technical quality vs learning-model adjustment. Auto-refreshes every 60s.</p>
-        {setups.length === 0 ? (
+        {learn && (
+          <div className="nexa-panel mb-3 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white">🧠 Self-Learning Loop <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">ACTIVE</span></h2>
+              <span className="text-xs text-slate-400">
+                win rate <span className="font-bold text-cyan-300">{learn.totals.winRate ?? '—'}%</span> · {learn.totals.wins}W / {learn.totals.losses}L recorded
+              </span>
+            </div>
+            <div className="flex gap-3 text-[10px]">
+              {learn.bySource.map((s) => (
+                <span key={s.source + s.outcome} className="rounded bg-slate-800 px-2 py-0.5 text-slate-300">
+                  {s.source}: {s.outcome.toLowerCase()} × {s.n}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {setups.length === 0? (
           <p className="text-sm text-slate-400">No live setups — scorecard fills as the scanner detects patterns.</p>
         ) : (
           <div className="space-y-2">

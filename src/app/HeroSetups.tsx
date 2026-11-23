@@ -157,7 +157,10 @@ export default function HeroSetups() {
       setLoading(false);
     };
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 30_000);
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(id); window.removeEventListener('focus', onFocus); };
     return () => clearInterval(id);
   }, []);
 

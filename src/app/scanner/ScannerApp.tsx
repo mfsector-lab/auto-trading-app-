@@ -36,6 +36,7 @@ export default function ScannerApp() {
   const [live, setLive] = useState(false);
   const [dirFilter, setDirFilter] = useState<'ALL' | 'BEARISH_HS' | 'BULLISH_IHS'>('ALL');
   const [search, setSearch] = useState('');
+  const [showStale, setShowStale] = useState(false);
 
   const scan = useCallback(async () => {
     try {
@@ -52,8 +53,13 @@ export default function ScannerApp() {
 
   useEffect(() => {
     scan();
-    const id = setInterval(scan, 60_000);
-    return () => clearInterval(id);
+    const id = setInterval(scan, 30_000);
+    const onFocus = () => scan();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [scan]);
 
   // TradingView-style chart modal via lightweight-charts (loaded on demand from CDN)
@@ -171,6 +177,10 @@ export default function ScannerApp() {
           placeholder="Search market — e.g. XAUUSD, GBPJPY, sweep…"
           className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/30 sm:max-w-xs"
         />
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <input type="checkbox" checked={showStale} onChange={(e) => setShowStale(e.target.checked)} className="accent-slate-500" />
+          show stale
+        </label>
         {([['ALL', 'All Setups'], ['BEARISH_HS', 'Bearish H&S ▼'], ['BULLISH_IHS', 'Inverse H&S ▲']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setDirFilter(k)}
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${dirFilter === k ? 'border-violet-400/40 bg-violet-500/15 text-violet-200' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'}`}>
@@ -192,6 +202,7 @@ export default function ScannerApp() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {setups
+            .filter((s) => (showStale || !s.stale))
             .filter((s) => dirFilter === 'ALL' || s.direction === dirFilter)
             .filter((s) => {
               if (!search.trim()) return true;

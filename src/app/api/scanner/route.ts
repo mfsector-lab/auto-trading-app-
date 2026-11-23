@@ -98,7 +98,7 @@ async function seedBacktest(pair: string, bars: Bar[], direction: 'BEARISH_HS' |
       for (const setup of setups) {
         if (setup.direction !== direction) continue;
         // resolve forward from detection: did price reach target before stop within 30 H4 bars?
-        const from = Math.min(bars.length - 1, setup.rightShoulder.index + 30);
+        const from = Math.min(bars.length - 1, setup.rightShoulder.index + 90); // H&S moves need ~15 days, not 5
         let outcome: string | null = null;
         for (let i = setup.rightShoulder.index + 1; i <= from; i++) {
           if (direction === 'BEARISH_HS') {
